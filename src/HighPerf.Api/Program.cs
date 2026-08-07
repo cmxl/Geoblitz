@@ -42,6 +42,51 @@ app.MapGet("/distance", (HttpContext ctx) =>
         AppJsonContext.Default.DistanceResponse);
 });
 
+app.MapGet("/cities/nearest", (HttpContext ctx, GeoDatabase db) =>
+{
+    var qs = (ctx.Request.QueryString.Value ?? "").AsSpan();
+    if (!QueryParams.TryGetDouble(qs, "lat", out var lat) || lat is < -90 or > 90)
+        return Problems.Validation("lat must be a number in [-90, 90]").ExecuteAsync(ctx);
+    if (!QueryParams.TryGetDouble(qs, "lon", out var lon) || lon is < -180 or > 180)
+        return Problems.Validation("lon must be a number in [-180, 180]").ExecuteAsync(ctx);
+    var count = 5;
+    if (QueryParams.TryGetRaw(qs, "count", out _) &&
+        (!QueryParams.TryGetInt(qs, "count", out count) || count is < 1 or > 100))
+        return Problems.Validation("count must be an integer in [1, 100]").ExecuteAsync(ctx);
+
+    Span<GeoHit> hits = stackalloc GeoHit[100];
+    var n = db.FindNearest(lat, lon, count, hits);
+    CityJson.WriteCities(ctx.Response, db, hits[..n]);
+    return ctx.Response.BodyWriter.FlushAsync().AsTask();
+});
+
+app.MapGet("/cities/within", (HttpContext ctx, GeoDatabase db) =>
+{
+    var qs = (ctx.Request.QueryString.Value ?? "").AsSpan();
+    if (!QueryParams.TryGetDouble(qs, "lat", out var lat) || lat is < -90 or > 90)
+        return Problems.Validation("lat must be a number in [-90, 90]").ExecuteAsync(ctx);
+    if (!QueryParams.TryGetDouble(qs, "lon", out var lon) || lon is < -180 or > 180)
+        return Problems.Validation("lon must be a number in [-180, 180]").ExecuteAsync(ctx);
+    if (!QueryParams.TryGetDouble(qs, "radiusKm", out var radiusKm) || radiusKm is <= 0 or > 500)
+        return Problems.Validation("radiusKm is required and must be in (0, 500]").ExecuteAsync(ctx);
+    var minPopulation = 0;
+    if (QueryParams.TryGetRaw(qs, "minPopulation", out _) &&
+        (!QueryParams.TryGetInt(qs, "minPopulation", out minPopulation) || minPopulation < 0))
+        return Problems.Validation("minPopulation must be a non-negative integer").ExecuteAsync(ctx);
+
+    var buffer = System.Buffers.ArrayPool<GeoHit>.Shared.Rent(1000);
+    try
+    {
+        var n = db.FindWithin(lat, lon, radiusKm, minPopulation, buffer.AsSpan(0, 1000));
+        CityJson.WriteCities(ctx.Response, db, buffer.AsSpan(0, n));
+    }
+    finally
+    {
+        System.Buffers.ArrayPool<GeoHit>.Shared.Return(buffer);
+    }
+    return ctx.Response.BodyWriter.FlushAsync().AsTask();
+});
+
 app.Run();
 
 public partial class Program;
