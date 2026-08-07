@@ -44,10 +44,16 @@ WarmupCount=3
 
 ## Observations
 
+> **Stale as of the M1 review fix.** The `Grid_FindWithin*` numbers below predate the
+> candidate-range geometry correction and the bounded top-k selection in `FindWithin`
+> (`GeoDatabase.FindWithin` no longer collects and sorts every match). Re-run the suite before
+> quoting them. Measured out-of-band on the same machine, the 500 km Berlin query went from
+> ~800 us to ~615 us (median of 3 x 300 iterations, Release), still at 0 B allocated.
+
 - **Zero-allocation proof**: `Grid_FindWithin100km` and `Grid_FindNearest10` both report `-`
   (0 B) in the `Allocated` column — the grid query path (`GeoDatabase.FindWithin` /
-  `FindNearest`, `HitBuffer`/`TopK` backed by `ArrayPool`) allocates nothing on the managed heap
-  per call. In fact all six benchmarks in this run show zero allocations.
+  `FindNearest`, the pooled/stack-allocated selection buffers and `TopK`) allocates nothing on
+  the managed heap per call. In fact all six benchmarks in this run show zero allocations.
 - **SIMD vs scalar**: `Simd_ChordFullScan` (48.7 us) is ~137x faster than
   `Scalar_HaversineFullScan` (6.66 ms) — a full linear scan over the unit-vector arrays with
   `Vector<float>` chord-distance comparisons beats the naive per-point Haversine scan by more

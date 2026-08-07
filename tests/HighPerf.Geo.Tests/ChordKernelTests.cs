@@ -52,6 +52,58 @@ public class ChordKernelTests
         finally { hits.Dispose(); }
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(9)]
+    [InlineData(15)]
+    [InlineData(16)]
+    [InlineData(17)]
+    [InlineData(31)]
+    [InlineData(33)]
+    [InlineData(1000)]
+    public void ScanWithinTopK_MatchesFilteredScalarReference_AllSizes(int n)
+    {
+        var (xs, ys, zs) = RandomPoints(n, seed: n + 101);
+        // every third point fails the filter, so rejected lanes fall inside the vector body
+        var pops = new int[n];
+        for (var i = 0; i < n; i++) pops[i] = i % 3 == 0 ? 10 : 1_000;
+        const int minPopulation = 500;
+        const int k = 5;
+
+        GeoMath.ToUnitVector(48.0, 11.0, out var qx, out var qy, out var qz);
+        var maxChordSq = GeoMath.KmToChordSq(3000);
+
+        var expected = new List<(int Idx, float D)>();
+        for (var i = 0; i < n; i++)
+        {
+            float dx = xs[i] - qx, dy = ys[i] - qy, dz = zs[i] - qz;
+            var d = dx * dx + dy * dy + dz * dz;
+            if (d <= maxChordSq && pops[i] >= minPopulation) expected.Add((100 + i, d));
+        }
+        expected.Sort((a, b) => a.D.CompareTo(b.D));
+        var expectedCount = Math.Min(k, expected.Count);
+
+        Span<float> keys = stackalloc float[k];
+        Span<int> idx = stackalloc int[k];
+        var topk = new TopK(keys, idx);
+        ChordKernel.ScanWithinTopK(xs, ys, zs, pops, minPopulation,
+            qx, qy, qz, maxChordSq, baseIndex: 100, ref topk);
+
+        Span<float> outKeys = stackalloc float[k];
+        Span<int> outIdx = stackalloc int[k];
+        var got = topk.CopySortedTo(outKeys, outIdx);
+
+        Assert.Equal(expectedCount, got);
+        for (var i = 0; i < got; i++)
+        {
+            Assert.Equal(expected[i].Idx, outIdx[i]);
+            Assert.Equal(expected[i].D, outKeys[i], 6);
+        }
+    }
+
     [Fact]
     public void HitBuffer_GrowsPastInitialCapacity()
     {

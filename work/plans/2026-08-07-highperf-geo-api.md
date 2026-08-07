@@ -1351,8 +1351,9 @@ internal int GetCandidateRanges(double lat, double lon, double radiusKm, Span<Da
 // Max 2 ranges per latitude row (antimeridian wrap) -> callers pass Span[2 * LatCells].
 ```
 
-- Consumes: `ChordKernel.ScanWithin`, `HitBuffer`, `GeoMath` (Tasks 3, 6).
-- Algorithm: latitude row window from `radiusKm / 111.195` degrees; per row, longitude window from `latDegRadius / cos(rowLatEdgeClosestToEquator...)` — use the row edge with the LARGEST `|lat|` for the widest window (safe superset), clamp: if window ≥ 180° scan the whole row. Wrap negative/overflow lon cells into up to 2 segments. Each cell segment `[c0..c1]` in a row maps to the single contiguous data range `[CellStart[rowBase + c0], CellStart[rowBase + c1 + 1])`.
+- Consumes: `ChordKernel.ScanWithinTopK`, `TopK`, `GeoMath` (Tasks 3, 6). (M1 review: was `ScanWithin`/`HitBuffer` before the bounded-selection fix; those remain for direct kernel use.)
+- Algorithm: latitude row window from `radiusKm / (EarthRadiusKm * pi / 180)` degrees; per row, the longitude half-window is the conservative spherical bound `2 * asin(sin(delta/2) / cos(max(|rowMaxAbsLat|, |queryLat|)))` where `delta = radiusKm / EarthRadiusKm` — derived from the haversine requirement `sin(dLon/2) <= sin(delta/2) / sqrt(cos phi * cos phiQuery)` bounded below by `cos(max(|phi|, |phiQuery|))`. It must include the QUERY latitude (a query nearer the pole than the row needs a wider window than the row alone implies) and must NOT clamp the pole row to 89.9°: when the ratio reaches 1 (or `cos = 0`) no longitude can be excluded and the whole row is scanned. Wrap negative/overflow lon cells into up to 2 segments. Each cell segment `[c0..c1]` in a row maps to the single contiguous data range `[CellStart[rowBase + c0], CellStart[rowBase + c1 + 1])`.
+  - **M1 review correction (C1):** the original spec used the flat-earth form `latDegRadius / cos(rowMaxAbsLat)` with a `Math.Min(89.9, ...)` clamp. That is not a superset: it ignores the query latitude and under-estimates via the linear approximation, losing up to 1113 of 14974 in-radius points at query lat 88 / r 500 km and missing a 386 m neighbour in the pole row at r 1 km.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -1492,41 +1493,58 @@ public readonly record struct GeoHit(int Index, float DistanceKm);
 Add to `GeoDatabase`:
 
 ```csharp
-    private const double KmPerLatDegree = 111.195; // EarthRadius * pi / 180
+    // M1 review correction (I1): the original spec collected every match into a growing HitBuffer and
+    // fully sorted it before truncating to results.Length — O(matches log matches) plus pool growth for
+    // ~20k matches on a 500 km query. Replaced by a bounded top-k selection (heap capacity =
+    // min(results.Length, Count)) with the minPopulation filter applied inside the scan, i.e. before
+    // selection, so the returned set is still "the closest N points that pass the filter".
+    private const double KmPerLatDegree = GeoMath.EarthRadiusKm * Math.PI / 180.0;
+    private const int StackSelectionCapacity = 256;
 
     public int FindWithin(double lat, double lon, double radiusKm, int minPopulation, Span<GeoHit> results)
     {
+        var k = Math.Min(results.Length, Count);
+        if (k <= 0) return 0;
+
         GeoMath.ToUnitVector(lat, lon, out var qx, out var qy, out var qz);
         var maxChordSq = GeoMath.KmToChordSq(radiusKm);
 
         Span<DataRange> ranges = LatCells <= 256 ? stackalloc DataRange[2 * 256] : new DataRange[2 * LatCells];
         var rangeCount = GetCandidateRanges(lat, lon, radiusKm, ranges);
 
-        var hits = new HitBuffer(1024);
+        float[]? rentedKeys = null;
+        int[]? rentedIdx = null;
+        Span<float> keys = k <= StackSelectionCapacity
+            ? stackalloc float[StackSelectionCapacity]
+            : (rentedKeys = ArrayPool<float>.Shared.Rent(k));
+        Span<int> idx = k <= StackSelectionCapacity
+            ? stackalloc int[StackSelectionCapacity]
+            : (rentedIdx = ArrayPool<int>.Shared.Rent(k));
+
         try
         {
+            var topk = new TopK(keys[..k], idx[..k]);
             for (var r = 0; r < rangeCount; r++)
             {
                 var (start, end) = (ranges[r].Start, ranges[r].End);
                 if (start == end) continue;
-                ChordKernel.ScanWithin(
-                    X.AsSpan(start, end - start), Y.AsSpan(start, end - start), Z.AsSpan(start, end - start),
-                    qx, qy, qz, maxChordSq, start, ref hits);
+                var len = end - start;
+                ChordKernel.ScanWithinTopK(
+                    X.AsSpan(start, len), Y.AsSpan(start, len), Z.AsSpan(start, len),
+                    _population.AsSpan(start, len), minPopulation,
+                    qx, qy, qz, maxChordSq, start, ref topk);
             }
 
-            hits.SortByDistance();
-            var written = 0;
-            for (var i = 0; i < hits.Count && written < results.Length; i++)
-            {
-                var idx = hits[i];
-                if (_population[idx] < minPopulation) continue;
-                results[written++] = new GeoHit(idx, (float)GeoMath.ChordSqToKm(hits.DistSqAt(i)));
-            }
-            return written;
+            var n = topk.Count;
+            keys[..n].Sort(idx[..n]);
+            for (var i = 0; i < n; i++)
+                results[i] = new GeoHit(idx[i], (float)GeoMath.ChordSqToKm(keys[i]));
+            return n;
         }
         finally
         {
-            hits.Dispose();
+            if (rentedKeys is not null) ArrayPool<float>.Shared.Return(rentedKeys);
+            if (rentedIdx is not null) ArrayPool<int>.Shared.Return(rentedIdx);
         }
     }
 
@@ -1537,15 +1555,26 @@ Add to `GeoDatabase`:
         var li1 = CellOfLat(lat + latDegRadius);
         var count = 0;
 
+        var sinHalfDelta = Math.Sin(Math.Min(radiusKm / GeoMath.EarthRadiusKm, Math.PI) / 2.0);
+        var absQueryLat = Math.Abs(lat);
+
         for (var li = li0; li <= li1; li++)
         {
             var rowBase = li * LonCells;
-            // widest |lat| edge of this row decides the longitude window (superset-safe)
+            // widest |lat| of this row *and* of the query decides the longitude window
             var edge0 = Math.Abs(-90.0 + li * CellSizeDeg);
             var edge1 = Math.Abs(-90.0 + (li + 1) * CellSizeDeg);
-            var maxAbsLat = Math.Min(89.9, Math.Max(edge0, edge1));
-            var lonDegRadius = latDegRadius / Math.Cos(maxAbsLat * Math.PI / 180.0);
+            var maxAbsLat = Math.Min(90.0, Math.Max(Math.Max(edge0, edge1), absQueryLat));
+            var cosLat = Math.Cos(maxAbsLat * (Math.PI / 180.0));
+            var ratio = cosLat <= 0.0 ? double.PositiveInfinity : sinHalfDelta / cosLat;
 
+            if (ratio >= 1.0) // no longitude can be excluded for this row
+            {
+                ranges[count++] = new DataRange(CellStart[rowBase], CellStart[rowBase + LonCells]);
+                continue;
+            }
+
+            var lonDegRadius = 2.0 * Math.Asin(ratio) * (180.0 / Math.PI);
             if (lonDegRadius * 2 >= 360.0 - CellSizeDeg)
             {
                 ranges[count++] = new DataRange(CellStart[rowBase], CellStart[rowBase + LonCells]);
