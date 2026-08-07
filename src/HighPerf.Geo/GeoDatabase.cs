@@ -81,4 +81,89 @@ public sealed class GeoDatabase
 
     internal int CellOfLat(double lat) => Math.Clamp((int)((lat + 90.0) / CellSizeDeg), 0, LatCells - 1);
     internal int CellOfLon(double lon) => Math.Clamp((int)((lon + 180.0) / CellSizeDeg), 0, LonCells - 1);
+
+    private const double KmPerLatDegree = 111.195; // EarthRadius * pi / 180
+
+    public int FindWithin(double lat, double lon, double radiusKm, int minPopulation, Span<GeoHit> results)
+    {
+        GeoMath.ToUnitVector(lat, lon, out var qx, out var qy, out var qz);
+        var maxChordSq = GeoMath.KmToChordSq(radiusKm);
+
+        Span<DataRange> ranges = LatCells <= 256 ? stackalloc DataRange[2 * 256] : new DataRange[2 * LatCells];
+        var rangeCount = GetCandidateRanges(lat, lon, radiusKm, ranges);
+
+        var hits = new HitBuffer(1024);
+        try
+        {
+            for (var r = 0; r < rangeCount; r++)
+            {
+                var (start, end) = (ranges[r].Start, ranges[r].End);
+                if (start == end) continue;
+                ChordKernel.ScanWithin(
+                    X.AsSpan(start, end - start), Y.AsSpan(start, end - start), Z.AsSpan(start, end - start),
+                    qx, qy, qz, maxChordSq, start, ref hits);
+            }
+
+            hits.SortByDistance();
+            var written = 0;
+            for (var i = 0; i < hits.Count && written < results.Length; i++)
+            {
+                var idx = hits[i];
+                if (_population[idx] < minPopulation) continue;
+                results[written++] = new GeoHit(idx, (float)GeoMath.ChordSqToKm(hits.DistSqAt(i)));
+            }
+            return written;
+        }
+        finally
+        {
+            hits.Dispose();
+        }
+    }
+
+    internal int GetCandidateRanges(double lat, double lon, double radiusKm, Span<DataRange> ranges)
+    {
+        var latDegRadius = radiusKm / KmPerLatDegree;
+        var li0 = CellOfLat(lat - latDegRadius);
+        var li1 = CellOfLat(lat + latDegRadius);
+        var count = 0;
+
+        for (var li = li0; li <= li1; li++)
+        {
+            var rowBase = li * LonCells;
+            // widest |lat| edge of this row decides the longitude window (superset-safe)
+            var edge0 = Math.Abs(-90.0 + li * CellSizeDeg);
+            var edge1 = Math.Abs(-90.0 + (li + 1) * CellSizeDeg);
+            var maxAbsLat = Math.Min(89.9, Math.Max(edge0, edge1));
+            var lonDegRadius = latDegRadius / Math.Cos(maxAbsLat * Math.PI / 180.0);
+
+            if (lonDegRadius * 2 >= 360.0 - CellSizeDeg)
+            {
+                ranges[count++] = new DataRange(CellStart[rowBase], CellStart[rowBase + LonCells]);
+                continue;
+            }
+
+            var c0 = (int)Math.Floor((lon - lonDegRadius + 180.0) / CellSizeDeg);
+            var c1 = (int)Math.Floor((lon + lonDegRadius + 180.0) / CellSizeDeg);
+            if (c1 - c0 + 1 >= LonCells)
+            {
+                ranges[count++] = new DataRange(CellStart[rowBase], CellStart[rowBase + LonCells]);
+                continue;
+            }
+
+            var w0 = ((c0 % LonCells) + LonCells) % LonCells;
+            var w1 = ((c1 % LonCells) + LonCells) % LonCells;
+            if (w0 <= w1)
+            {
+                ranges[count++] = new DataRange(CellStart[rowBase + w0], CellStart[rowBase + w1 + 1]);
+            }
+            else // wraps the antimeridian: two segments
+            {
+                ranges[count++] = new DataRange(CellStart[rowBase + w0], CellStart[rowBase + LonCells]);
+                ranges[count++] = new DataRange(CellStart[rowBase], CellStart[rowBase + w1 + 1]);
+            }
+        }
+        return count;
+    }
 }
+
+internal readonly record struct DataRange(int Start, int End);
