@@ -87,6 +87,34 @@ app.MapGet("/cities/within", (HttpContext ctx, GeoDatabase db) =>
     return ctx.Response.BodyWriter.FlushAsync().AsTask();
 });
 
+app.MapGet("/geohash/encode", (HttpContext ctx) =>
+{
+    var qs = (ctx.Request.QueryString.Value ?? "").AsSpan();
+    if (!QueryParams.TryGetDouble(qs, "lat", out var lat) || lat is < -90 or > 90)
+        return Problems.Validation("lat must be a number in [-90, 90]");
+    if (!QueryParams.TryGetDouble(qs, "lon", out var lon) || lon is < -180 or > 180)
+        return Problems.Validation("lon must be a number in [-180, 180]");
+    var precision = 9;
+    if (QueryParams.TryGetRaw(qs, "precision", out _) &&
+        (!QueryParams.TryGetInt(qs, "precision", out precision) || precision is < 1 or > Geohash.MaxPrecision))
+        return Problems.Validation("precision must be an integer in [1, 12]");
+
+    Span<char> buffer = stackalloc char[Geohash.MaxPrecision];
+    var n = Geohash.Encode(lat, lon, precision, buffer);
+    return Results.Json(new GeohashEncodeResponse(new string(buffer[..n])),
+        AppJsonContext.Default.GeohashEncodeResponse);
+});
+
+app.MapGet("/geohash/decode", (HttpContext ctx) =>
+{
+    var qs = (ctx.Request.QueryString.Value ?? "").AsSpan();
+    if (!QueryParams.TryGetRaw(qs, "hash", out var hash)
+        || !Geohash.TryDecode(hash, out var lat, out var lon, out var latErr, out var lonErr))
+        return Problems.Validation("hash is required and must be a valid geohash (1-12 base32 chars)");
+    return Results.Json(new GeohashDecodeResponse(lat, lon, latErr, lonErr),
+        AppJsonContext.Default.GeohashDecodeResponse);
+});
+
 app.Run();
 
 public partial class Program;
