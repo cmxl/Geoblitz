@@ -120,6 +120,48 @@ public sealed class GeoDatabase
         }
     }
 
+    private const double HalfCircumferenceKm = 20016.0;
+
+    public int FindNearest(double lat, double lon, int k, Span<GeoHit> results)
+    {
+        k = Math.Min(Math.Min(k, Count), Math.Min(results.Length, 128));
+        if (k <= 0) return 0;
+
+        GeoMath.ToUnitVector(lat, lon, out var qx, out var qy, out var qz);
+        Span<float> heapKeys = stackalloc float[128];
+        Span<int> heapIdx = stackalloc int[128];
+        Span<DataRange> ranges = LatCells <= 256 ? stackalloc DataRange[2 * 256] : new DataRange[2 * LatCells];
+        Span<float> sortedKeys = stackalloc float[128];
+        Span<int> sortedIdx = stackalloc int[128];
+
+        var radiusKm = 50.0;
+        while (true)
+        {
+            var topk = new TopK(heapKeys[..k], heapIdx[..k]);
+            var maxChordSq = GeoMath.KmToChordSq(radiusKm);
+            var rangeCount = GetCandidateRanges(lat, lon, radiusKm, ranges);
+            for (var r = 0; r < rangeCount; r++)
+            {
+                var (start, end) = (ranges[r].Start, ranges[r].End);
+                if (start == end) continue;
+                ChordKernel.ScanNearest(
+                    X.AsSpan(start, end - start), Y.AsSpan(start, end - start), Z.AsSpan(start, end - start),
+                    qx, qy, qz, maxChordSq, start, ref topk);
+            }
+
+            var done = radiusKm >= HalfCircumferenceKm
+                || (topk.Count == k && GeoMath.ChordSqToKm(topk.Threshold) <= radiusKm);
+            if (done)
+            {
+                var n = topk.CopySortedTo(sortedKeys, sortedIdx);
+                for (var i = 0; i < n; i++)
+                    results[i] = new GeoHit(sortedIdx[i], (float)GeoMath.ChordSqToKm(sortedKeys[i]));
+                return n;
+            }
+            radiusKm = Math.Min(radiusKm * 4, HalfCircumferenceKm);
+        }
+    }
+
     internal int GetCandidateRanges(double lat, double lon, double radiusKm, Span<DataRange> ranges)
     {
         var latDegRadius = radiusKm / KmPerLatDegree;
