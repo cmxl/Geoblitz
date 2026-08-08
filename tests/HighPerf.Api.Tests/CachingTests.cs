@@ -1,3 +1,4 @@
+using System.Linq;
 using Xunit;
 
 namespace HighPerf.Api.Tests;
@@ -76,5 +77,36 @@ public class CachingTests(ApiFixture fixture)
         var b = await client.GetAsync("/cities/nearest?lat=53.109&lon=10.100&count=3",
             TestContext.Current.CancellationToken);
         Assert.NotEqual(CountHeader(a), CountHeader(b));
+    }
+
+    [Fact]
+    public async Task ConcurrentRequests_ForANeverBeforeSeenKey_AreNotAStampede()
+    {
+        // ASP.NET Core's output-cache middleware locks per key by default (SetLocking, on unless
+        // disabled): when N requests race for the same not-yet-cached entry, only the first actually
+        // runs the handler and the rest await and replay that one response. This is genuinely
+        // untested behavior — every other caching test issues requests sequentially, which cannot
+        // distinguish "served from cache" from "would have recomputed anyway, coincidentally
+        // producing the same header". Concurrency is the only way to exercise the lock itself.
+        using var client = fixture.CreateClient();
+        const string url = "/cities/nearest?lat=54.777&lon=11.777&count=6"; // unique to this test
+        const int concurrency = 20;
+
+        var tasks = new Task<HttpResponseMessage>[concurrency];
+        for (var i = 0; i < concurrency; i++)
+            tasks[i] = client.GetAsync(url, TestContext.Current.CancellationToken);
+        var responses = await Task.WhenAll(tasks);
+
+        foreach (var res in responses) res.EnsureSuccessStatusCode();
+        var counts = responses.Select(CountHeader).Distinct().ToArray();
+        Assert.True(counts.Length == 1,
+            $"expected every concurrent response to share one compute count (no stampede), got: {string.Join(",", counts)}");
+
+        var bodies = new string[concurrency];
+        for (var i = 0; i < concurrency; i++)
+            bodies[i] = await responses[i].Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        Assert.True(bodies.Distinct().Count() == 1, "all concurrent responses must be byte-identical");
+
+        foreach (var res in responses) res.Dispose();
     }
 }
