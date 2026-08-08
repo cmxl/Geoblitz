@@ -150,7 +150,8 @@ claim.
 | Click on the map | mode = `distance` | Sets the next ruler endpoint; a third click discards the previous pair and starts a new measurement |
 | Alt + mouse-down, then drag | any mode | Switches to `within` mode if not already in it; draws a live cyan dashed circle from the anchor to the cursor (local geometry, no request) |
 | Release after alt-drag | mode = `within` | `GET /cities/within` at the anchor, with the dragged radius (ignored if the drag was under ~50 m) |
-| Radius slider / min-population field (panel) | mode = `within` | Updates `radiusKm` / `minPopulation` in the store; takes effect on the next click or drag |
+| Radius slider / min-population field (panel) | mode = `within` | Updates `radiusKm` / `minPopulation` and immediately re-runs the query at the last query point (`GeoQueryStore.refresh()`); the slider re-queries on release, its label updates live while dragging |
+| Count field (panel) | mode = `nearest` | Updates `count` and immediately re-runs the query at the last query point; the input echoes the clamped value |
 | `D` key | any mode, not while focused in an input | Toggles distance mode on/off |
 | Hover a result row (panel) | results present | Highlights the matching map pin (grows from r=5 to r=8, brightens) |
 | Hover a map pin | results present | Highlights the matching result row — two-way highlight, single source of truth (`GeoQueryStore.highlightedIndex`) |

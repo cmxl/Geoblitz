@@ -31,7 +31,7 @@ import { QueryMode } from '../core/models';
               min="1"
               max="100"
               [value]="store.count()"
-              (change)="store.setCount(toNumber($event))"
+              (change)="commitCount($event)"
           /></label>
         }
         @case ('within') {
@@ -43,6 +43,7 @@ import { QueryMode } from '../core/models';
               max="500"
               [value]="store.radiusKm()"
               (input)="store.setRadiusKm(toNumber($event))"
+              (change)="commitRadius($event)"
           /></label>
           <label class="field"
             ><span>min population</span>
@@ -50,7 +51,7 @@ import { QueryMode } from '../core/models';
               type="number"
               min="0"
               [value]="store.minPopulation()"
-              (change)="store.setMinPopulation(toNumber($event))"
+              (change)="commitMinPopulation($event)"
           /></label>
         }
         @case ('distance') {
@@ -245,5 +246,27 @@ export class QueryPanelComponent {
 
   protected toNumber(event: Event): number {
     return Number((event.target as HTMLInputElement).value);
+  }
+
+  /* Commit handlers: apply the (clamped) value, sync the input box to the clamped result,
+     and re-run the active query so parameter changes take effect immediately instead of
+     waiting for the next map click. The slider commits on release ('change'), not while
+     dragging ('input' only updates the live label). */
+
+  protected commitCount(event: Event): void {
+    this.store.setCount(this.toNumber(event));
+    (event.target as HTMLInputElement).value = String(this.store.count());
+    void this.store.refresh();
+  }
+
+  protected commitRadius(event: Event): void {
+    this.store.setRadiusKm(this.toNumber(event));
+    void this.store.refresh();
+  }
+
+  protected commitMinPopulation(event: Event): void {
+    this.store.setMinPopulation(this.toNumber(event));
+    (event.target as HTMLInputElement).value = String(this.store.minPopulation());
+    void this.store.refresh();
   }
 }

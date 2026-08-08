@@ -127,6 +127,23 @@ export const GeoQueryStore = signalStore(
       patchState(store, { radiusKm: Number.isFinite(n) ? clamp(n, 0.1, 500) : current });
     }
 
+    function queryNearest(lat: number, lon: number): Promise<void> {
+      patchState(store, { queryPoint: { lat, lon } });
+      return run(
+        () => api.nearest(lat, lon, store.count()),
+        (r) => patchState(store, { results: r.data.cities, highlightedIndex: null }),
+      );
+    }
+
+    function queryWithin(lat: number, lon: number, radiusKm?: number): Promise<void> {
+      if (radiusKm !== undefined) setRadiusKm(radiusKm);
+      patchState(store, { queryPoint: { lat, lon } });
+      return run(
+        () => api.within(lat, lon, store.radiusKm(), store.minPopulation()),
+        (r) => patchState(store, { results: r.data.cities, highlightedIndex: null }),
+      );
+    }
+
     return {
       setMode(mode: QueryMode): void {
         requestSeq++; // stale in-flight responses from the previous mode must not land here
@@ -161,20 +178,18 @@ export const GeoQueryStore = signalStore(
       clearError(): void {
         patchState(store, { error: null });
       },
-      queryNearest(lat: number, lon: number): Promise<void> {
-        patchState(store, { queryPoint: { lat, lon } });
-        return run(
-          () => api.nearest(lat, lon, store.count()),
-          (r) => patchState(store, { results: r.data.cities, highlightedIndex: null }),
-        );
-      },
-      queryWithin(lat: number, lon: number, radiusKm?: number): Promise<void> {
-        if (radiusKm !== undefined) setRadiusKm(radiusKm);
-        patchState(store, { queryPoint: { lat, lon } });
-        return run(
-          () => api.within(lat, lon, store.radiusKm(), store.minPopulation()),
-          (r) => patchState(store, { results: r.data.cities, highlightedIndex: null }),
-        );
+      queryNearest,
+      queryWithin,
+      /** Re-runs the active mode's query at the current query point, e.g. after a parameter
+       *  change from the panel. No-op when nothing has been queried yet or in distance mode
+       *  (the ruler has no parameters to react to). */
+      refresh(): Promise<void> {
+        const point = store.queryPoint();
+        const mode = store.mode();
+        if (point === null || mode === 'distance') return Promise.resolve();
+        return mode === 'nearest'
+          ? queryNearest(point.lat, point.lon)
+          : queryWithin(point.lat, point.lon);
       },
       async addRulerPoint(lat: number, lon: number): Promise<void> {
         const points = store.rulerPoints();

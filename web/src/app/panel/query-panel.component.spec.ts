@@ -5,10 +5,10 @@ import { GeoQueryStore } from '../core/geo-query.store';
 import { GeoApiService } from '../core/geo-api.service';
 
 describe('QueryPanelComponent', () => {
-  let api: { nearest: ReturnType<typeof vi.fn> };
+  let api: { nearest: ReturnType<typeof vi.fn>; within: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
-    api = { nearest: vi.fn() };
+    api = { nearest: vi.fn(), within: vi.fn() };
     TestBed.configureTestingModule({ providers: [{ provide: GeoApiService, useValue: api }] });
   });
 
@@ -114,5 +114,94 @@ describe('QueryPanelComponent', () => {
     expect(store.highlightedIndex()).toBe(0);
     row.dispatchEvent(new MouseEvent('mouseleave'));
     expect(store.highlightedIndex()).toBeNull();
+  });
+
+  it('changing the count input re-runs the current query immediately', async () => {
+    api.nearest.mockResolvedValue({
+      data: { count: 0, cities: [] },
+      engineMicros: 1,
+      computeCount: 1,
+      httpMillis: 1,
+    });
+    const store = TestBed.inject(GeoQueryStore);
+    await store.queryNearest(48.1, 11.5);
+    expect(api.nearest).toHaveBeenCalledTimes(1);
+
+    const fixture = render();
+    const input = fixture.nativeElement.querySelector('input[type=number]') as HTMLInputElement;
+    input.value = '25';
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(store.count()).toBe(25);
+    expect(api.nearest).toHaveBeenCalledTimes(2);
+    expect(api.nearest).toHaveBeenLastCalledWith(48.1, 11.5, 25);
+  });
+
+  it('count input echoes the clamped value back into the box', async () => {
+    api.nearest.mockResolvedValue({
+      data: { count: 0, cities: [] },
+      engineMicros: 1,
+      computeCount: 1,
+      httpMillis: 1,
+    });
+    const fixture = render();
+    const input = fixture.nativeElement.querySelector('input[type=number]') as HTMLInputElement;
+    input.value = '0';
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+    expect(input.value).toBe('1'); // clamped, and the box reflects it
+  });
+
+  it('radius slider: input updates the label only, change re-runs the within query', async () => {
+    api.within.mockResolvedValue({
+      data: { count: 0, cities: [] },
+      engineMicros: 1,
+      computeCount: 1,
+      httpMillis: 1,
+    });
+    const store = TestBed.inject(GeoQueryStore);
+    store.setMode('within');
+    await store.queryWithin(48.1, 11.5, 100);
+    expect(api.within).toHaveBeenCalledTimes(1);
+
+    const fixture = render();
+    const slider = fixture.nativeElement.querySelector('input[type=range]') as HTMLInputElement;
+
+    slider.value = '30';
+    slider.dispatchEvent(new Event('input')); // dragging: live label only, no query
+    await fixture.whenStable();
+    expect(store.radiusKm()).toBe(30);
+    expect(api.within).toHaveBeenCalledTimes(1);
+
+    slider.dispatchEvent(new Event('change')); // release: commit + re-query
+    await fixture.whenStable();
+    expect(api.within).toHaveBeenCalledTimes(2);
+    expect(api.within).toHaveBeenLastCalledWith(48.1, 11.5, 30, 0);
+  });
+
+  it('min population: change re-queries and echoes the clamped value', async () => {
+    api.within.mockResolvedValue({
+      data: { count: 0, cities: [] },
+      engineMicros: 1,
+      computeCount: 1,
+      httpMillis: 1,
+    });
+    const store = TestBed.inject(GeoQueryStore);
+    store.setMode('within');
+    await store.queryWithin(48.1, 11.5, 100);
+
+    const fixture = render();
+    const input = fixture.nativeElement.querySelector(
+      'input[type=number][min="0"]',
+    ) as HTMLInputElement;
+    input.value = '-5';
+    input.dispatchEvent(new Event('change'));
+    await fixture.whenStable();
+
+    expect(store.minPopulation()).toBe(0);
+    expect(input.value).toBe('0'); // clamped echo
+    expect(api.within).toHaveBeenCalledTimes(2);
+    expect(api.within).toHaveBeenLastCalledWith(48.1, 11.5, 100, 0);
   });
 });

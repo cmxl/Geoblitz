@@ -311,4 +311,40 @@ describe('GeoQueryStore', () => {
       expect(store.results().length).toBe(0);
     });
   });
+
+  describe('refresh', () => {
+    it('is a no-op before any query point exists', async () => {
+      await store.refresh();
+      expect(api.nearest).not.toHaveBeenCalled();
+      expect(api.within).not.toHaveBeenCalled();
+    });
+
+    it('re-runs nearest at the stored query point with the updated count', async () => {
+      api.nearest.mockResolvedValue(citiesResult(3, 1));
+      await store.queryNearest(48.1, 11.5);
+      store.setCount(25);
+      await store.refresh();
+      expect(api.nearest).toHaveBeenLastCalledWith(48.1, 11.5, 25);
+      expect(api.nearest).toHaveBeenCalledTimes(2);
+    });
+
+    it('re-runs within at the stored query point with updated radius and minPopulation', async () => {
+      api.within.mockResolvedValue(citiesResult(2, 1));
+      store.setMode('within');
+      await store.queryWithin(48.1, 11.5, 100);
+      store.setRadiusKm(30);
+      store.setMinPopulation(50_000);
+      await store.refresh();
+      expect(api.within).toHaveBeenLastCalledWith(48.1, 11.5, 30, 50_000);
+    });
+
+    it('is a no-op in distance mode even with a stale query point', async () => {
+      api.nearest.mockResolvedValue(citiesResult(1, 1));
+      await store.queryNearest(1, 1);
+      store.setMode('distance');
+      await store.refresh();
+      expect(api.nearest).toHaveBeenCalledTimes(1);
+      expect(api.distance).not.toHaveBeenCalled();
+    });
+  });
 });
