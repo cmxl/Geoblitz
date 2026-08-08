@@ -52,6 +52,15 @@ This downloads `cities1000.zip` from geonames.org, reduces each row to a 5-colum
 (`name, country, lat, lon, population`), and gzips it into
 `src/HighPerf.Geo/Resources/cities.tsv.gz`.
 
+Optional: the "Flight Deck" web console (Angular, requires the API above running first).
+
+```bash
+cd web && npm ci && npm start
+```
+
+Then open `http://localhost:4200` — see [`docs/frontend.md`](docs/frontend.md) for what it
+does and how it's built.
+
 ## Try it
 
 ```bash
@@ -93,4 +102,5 @@ k6 run loadtest/mixed.js    # requires the API running and k6 installed
 - `benchmarks/HighPerf.Benchmarks` — BenchmarkDotNet suite; results in `benchmarks/RESULTS.md`.
 - `loadtest/` — k6 scripts for per-endpoint and mixed-traffic load testing.
 - `tools/prepare-dataset.ps1` — regenerates the embedded dataset from GeoNames.
-- `docs/` — architecture, performance techniques, API reference, benchmarks ([index](docs/index.md)).
+- `web/` — the Angular "Flight Deck" map console for the API (see [`docs/frontend.md`](docs/frontend.md)).
+- `docs/` — architecture, performance techniques, API reference, benchmarks, frontend ([index](docs/index.md)).

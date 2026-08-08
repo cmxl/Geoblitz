@@ -128,6 +128,16 @@ sequenceDiagram
     end
 ```
 
+## Web console
+
+`web/` is a separate Angular 22 "Flight Deck" console — a local map UI that drives the same
+five geo endpoints and surfaces their `Server-Timing`/`X-Compute-Count` headers as a
+permanent HUD. It runs as its own process (`ng serve`, port 4200) against the API (port
+5235) over `fetch`, enabled by a Development-only CORS policy in `Program.cs`; it has no
+server-side component of its own and does not change the API's request-handling path for
+any other client. See [frontend.md](frontend.md) for its architecture, HUD honesty rules,
+and gesture reference.
+
 ## See also
 
 - [Performance techniques](performance-techniques.md) — why each stage above is built the
@@ -135,3 +145,4 @@ sequenceDiagram
 - [API reference](api.md) — full parameter/response contract for all six endpoints.
 - [Benchmarks](benchmarks.md) — how the numbers in this doc and in `benchmarks/RESULTS.md`
   were produced.
+- [Frontend](frontend.md) — the Angular map console that consumes this API.
