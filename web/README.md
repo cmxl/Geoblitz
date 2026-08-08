@@ -1,59 +1,26 @@
-# HighperfWeb
+# HighPerf Geo — Flight Deck
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 22.1.3.
+A single-view Angular console for the HighPerf Geo API: click-to-query nearest cities,
+alt-drag/slider radius search, and a two-click ruler, all rendered on a dark-themed OpenStreetMap
+view with a live HUD (engine time, HTTP time, cache HIT/MISS, allocation figures).
 
-## Development server
+See [`../docs/frontend.md`](../docs/frontend.md) for architecture, HUD semantics, gesture
+details, and API contracts.
 
-To start a local development server, run:
-
-```bash
-ng serve
-```
-
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
-
-## Code scaffolding
-
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+## Running it
 
 ```bash
-ng generate component component-name
+npm ci      # first run only
+npm start   # ng serve → http://localhost:4200
 ```
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+The API must be running separately (see the repo root `README.md` / `docs/frontend.md` "Running
+it" for the exact command); the web app talks to it via the hardcoded `GEO_API_BASE_URL` token
+documented in `docs/frontend.md`.
+
+## Testing
 
 ```bash
-ng generate --help
+npm test -- --watch=false   # Vitest, single run (used in CI)
+npm test                    # Vitest, watch mode
 ```
-
-## Building
-
-To build the project run:
-
-```bash
-ng build
-```
-
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
-
-## Running unit tests
-
-To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
-
-```bash
-ng test
-```
-
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.

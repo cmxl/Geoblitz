@@ -79,11 +79,17 @@ export class DragLifecycle {
 
   /**
    * Aborts the drag without querying: release outside the map container, the pointer leaving
-   * the container mid-drag, or an explicit Escape. No click follows in these cases, so no
-   * suppression is armed.
+   * the container mid-drag, or an explicit Escape. Escape only cancels the *drag* gesture — the
+   * mouse button may still be held down, and releasing it afterwards (inside the container, or
+   * back inside after a mouseout) still fires a native browser `click` there, since Leaflet's
+   * own drag-suppression never engaged. Arming suppression here — exactly like `releaseInside` —
+   * means that stray click is swallowed instead of re-querying at the release point. The caller
+   * is responsible for scheduling `expireClickSuppression()` so an armed-but-unconsumed flag
+   * (no click ever follows) self-clears.
    */
   cancel(): void {
     this.reset();
+    this.suppressClick = true;
   }
 
   /** Called once per `click` event; returns true (and consumes the flag) exactly once per suppressed release. */

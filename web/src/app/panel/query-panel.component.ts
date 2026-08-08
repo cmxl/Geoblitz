@@ -69,7 +69,17 @@ import { QueryMode } from '../core/models';
         </div>
       }
       @if (store.error(); as err) {
-        <p class="error">{{ err }}</p>
+        <p class="error">
+          <span>{{ err }}</span>
+          <button
+            type="button"
+            class="dismiss"
+            aria-label="Dismiss error"
+            (click)="store.clearError()"
+          >
+            ×
+          </button>
+        </p>
       }
     </div>
 
@@ -164,9 +174,22 @@ import { QueryMode } from '../core/models';
       margin: 6px 0 2px;
     }
     .error {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
       color: var(--fd-red);
       font: 12px/1.5 var(--fd-mono);
       margin: 8px 0 0;
+    }
+    .dismiss {
+      flex: none;
+      background: transparent;
+      border: none;
+      color: var(--fd-red);
+      font: 14px/1 var(--fd-mono);
+      cursor: pointer;
+      padding: 0 2px;
     }
     .results {
       flex: 1;

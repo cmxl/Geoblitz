@@ -126,6 +126,14 @@ something this specific page measured. The cache row reads `cached` in place of 
 time only when `RequestTiming.cacheHit` is true; otherwise it always shows the real
 `EngineTimePipe`-formatted value, never a placeholder.
 
+**Deliberate deviation from the original spec's error grouping:** the design spec grouped all
+server-side failures (4xx and 5xx) under one inline-error treatment. The shipped store instead
+renders 4xx `ProblemDetails` inline in the panel (the round trip succeeded, so the link is
+provably up — see `run()`'s catch branch in `geo-query.store.ts`) and reserves the `LINK DOWN`
+HUD state for 5xx responses and network failures, where the link/server itself is the thing
+that's actually broken. This distinction was judged more honest than the spec's original
+grouping and is tracked as accepted debt (D6) rather than a silent drift.
+
 As a dev-machine anecdote (not a benchmark — the authoritative numbers live in
 [benchmarks.md](benchmarks.md)): a nearest-city click during Task 10's live smoke measured
 roughly **49 µs** engine time and roughly **14 ms** for the browser's first-paint request

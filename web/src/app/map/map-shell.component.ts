@@ -113,14 +113,12 @@ export class MapShellComponent {
     // (or the pointer leaving mid-drag) would otherwise leave the gesture wedged — cancel it.
     map.on('mouseout', () => {
       if (!this.dragLifecycle.active) return;
-      this.dragLifecycle.cancel();
-      this.endDragVisuals(map);
+      this.cancelDrag(map);
     });
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && this.dragLifecycle.active) {
-        this.dragLifecycle.cancel();
-        this.endDragVisuals(map);
+        this.cancelDrag(map);
         return;
       }
       if (e.key.toLowerCase() === 'd' && !(e.target instanceof HTMLInputElement)) {
@@ -163,10 +161,10 @@ export class MapShellComponent {
         if (result)
           void this.store.queryWithin(result.anchor.lat, result.anchor.lng, result.radiusKm);
         this.scheduleSuppressionExpiry();
+        this.endDragVisuals(map);
       } else {
-        this.dragLifecycle.cancel();
+        this.cancelDrag(map);
       }
-      this.endDragVisuals(map);
     };
     this.windowMouseUpHandler = handler;
     window.addEventListener('mouseup', handler);
@@ -177,6 +175,18 @@ export class MapShellComponent {
       window.removeEventListener('mouseup', this.windowMouseUpHandler);
       this.windowMouseUpHandler = null;
     }
+  }
+
+  /**
+   * Aborts the in-progress drag: release outside the container, pointer leaving mid-drag
+   * (mouseout), or Escape. Every one of these paths still risks a stray native `click` firing
+   * afterwards (see `DragLifecycle.cancel` doc comment), so it arms suppression and schedules
+   * its expiry exactly like a real release does, then tears down the drag visuals/listeners.
+   */
+  private cancelDrag(map: L.Map): void {
+    this.dragLifecycle.cancel();
+    this.scheduleSuppressionExpiry();
+    this.endDragVisuals(map);
   }
 
   /** Clears the preview circle and re-enables map panning; used by every drag-ending path. */

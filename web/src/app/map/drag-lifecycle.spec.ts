@@ -84,7 +84,7 @@ describe('DragLifecycle', () => {
   });
 
   describe('cancel (release outside container / mouseleave / Escape)', () => {
-    it('clears the drag state without arming click suppression', () => {
+    it('clears the drag state and arms click suppression', () => {
       const drag = new DragLifecycle(planarKm);
       drag.begin({ lat: 0, lng: 0 });
       drag.move({ lat: 3, lng: 4 });
@@ -92,10 +92,10 @@ describe('DragLifecycle', () => {
       expect(drag.active).toBe(false);
       expect(drag.anchor).toBeNull();
       expect(drag.previewRadiusKm).toBe(0);
-      expect(drag.consumeClickSuppression()).toBe(false);
+      expect(drag.consumeClickSuppression()).toBe(true);
     });
 
-    it('is a safe no-op when no drag is active', () => {
+    it('is a safe no-op when no drag is active, beyond arming suppression', () => {
       const drag = new DragLifecycle(planarKm);
       expect(() => drag.cancel()).not.toThrow();
       expect(drag.active).toBe(false);
@@ -106,6 +106,30 @@ describe('DragLifecycle', () => {
       drag.begin({ lat: 0, lng: 0 });
       drag.cancel(); // e.g. released outside the container
       expect(drag.releaseInside({ lat: 9, lng: 9 })).toBeNull();
+    });
+
+    it('suppresses the synthetic click that follows Escape/mouseout-cancel when the button is released inside afterwards', () => {
+      // Escape (or a mouseout) only cancels the drag gesture, not the held-down mouse button.
+      // Releasing it back inside the container still fires a native `click` there — this must
+      // be swallowed, not treated as a fresh nearest/within query at the release point.
+      const drag = new DragLifecycle(planarKm);
+      drag.begin({ lat: 48, lng: 11 });
+      drag.move({ lat: 48.1, lng: 11.1 });
+      drag.cancel();
+      // No releaseInside call happens on this path in the real component (the window mouseup
+      // listener is already detached by the time the button comes back up) — the stray event is
+      // a plain browser `click`, handled solely via consumeClickSuppression().
+      expect(drag.consumeClickSuppression()).toBe(true);
+      expect(drag.consumeClickSuppression()).toBe(false); // consumed exactly once
+    });
+
+    it('cancel-then-releaseInside does not double-arm or leak suppression beyond a single consume', () => {
+      const drag = new DragLifecycle(planarKm, 0.05);
+      drag.begin({ lat: 0, lng: 0 });
+      drag.cancel();
+      expect(drag.releaseInside({ lat: 9, lng: 9 })).toBeNull(); // drag already inactive
+      expect(drag.consumeClickSuppression()).toBe(true);
+      expect(drag.consumeClickSuppression()).toBe(false);
     });
   });
 

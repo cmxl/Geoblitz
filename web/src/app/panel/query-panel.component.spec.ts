@@ -76,6 +76,26 @@ describe('QueryPanelComponent', () => {
     expect(el.querySelector('.error')!.textContent).toContain('count must be');
   });
 
+  it('dismisses the error via the × button', async () => {
+    const store = TestBed.inject(GeoQueryStore);
+    const { GeoApiError } = await import('../core/models');
+    api.nearest.mockRejectedValue(
+      new GeoApiError({
+        title: 'Invalid request',
+        status: 400,
+        detail: 'count must be an integer in [1, 100]',
+      }),
+    );
+    await store.queryNearest(1, 1);
+    const fixture = render();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('.error')).toBeTruthy();
+    (el.querySelector('.dismiss') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(store.error()).toBeNull();
+    expect(el.querySelector('.error')).toBeFalsy();
+  });
+
   it('hovering a row sets the store highlight', async () => {
     api.nearest.mockResolvedValue({
       data: {
