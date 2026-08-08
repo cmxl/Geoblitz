@@ -1,4 +1,4 @@
-import { InjectionToken } from '@angular/core';
+import { InjectionToken, isDevMode } from '@angular/core';
 
 export interface CityHit {
   name: string;
@@ -41,6 +41,10 @@ export interface RequestTiming {
   cacheHit: boolean;
   at: number;
 }
+// Dev-server workflow (`ng serve` on :4200) still talks to the API on :5235 via dev-only
+// CORS. Production builds are served by the API itself (tools/publish-web.ps1 +
+// single-origin hosting in Program.cs), so a relative/same-origin base URL is correct there
+// and CORS never enters the picture.
 export const GEO_API_BASE_URL = new InjectionToken<string>('GEO_API_BASE_URL', {
-  factory: () => 'http://localhost:5235',
+  factory: () => (isDevMode() ? 'http://localhost:5235' : ''),
 });

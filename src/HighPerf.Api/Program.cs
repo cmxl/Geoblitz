@@ -40,6 +40,30 @@ app.UseExceptionHandler(errApp => errApp.Run(async ctx =>
         AppJsonContext.Default.ApiProblem, contentType: "application/problem+json");
 }));
 
+// Single-origin hosting: serve the built Angular console (tools/publish-web.ps1 mirrors
+// web/dist/highperf-web/browser into wwwroot) so the API and the console share one origin
+// and one process. API-only runs and CI never populate wwwroot, and UseStaticFiles doesn't
+// throw when the web root is missing - it just serves nothing - but we guard explicitly so
+// the "no client built" case is a documented, deliberate no-op rather than an implicit one.
+// Deliberately no response compression here: keeps the JSON hot path untouched.
+if (Directory.Exists(app.Environment.WebRootPath))
+{
+    app.UseDefaultFiles();
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        OnPrepareResponse = ctx =>
+        {
+            // Angular emits content-hashed filenames for everything except index.html, so
+            // every asset except index.html is immutable; index.html is the only file whose
+            // content can change without its URL changing, so it must always be revalidated.
+            var isIndex = ctx.File.Name.Equals("index.html", StringComparison.OrdinalIgnoreCase);
+            ctx.Context.Response.Headers.CacheControl = isIndex
+                ? "no-cache"
+                : "public,max-age=31536000,immutable";
+        },
+    });
+}
+
 if (app.Environment.IsDevelopment())
     app.UseCors("dev");
 

@@ -52,14 +52,22 @@ This downloads `cities1000.zip` from geonames.org, reduces each row to a 5-colum
 (`name, country, lat, lon, population`), and gzips it into
 `src/HighPerf.Geo/Resources/cities.tsv.gz`.
 
-Optional: the "Flight Deck" web console (Angular, requires the API above running first).
+Optional: the "Flight Deck" web console (Angular).
 
-```bash
-cd web && npm ci && npm start
+```powershell
+# Recommended: single-origin showcase mode — one process serves both the API and the console
+pwsh tools/publish-web.ps1
+dotnet run -c Release --project src/HighPerf.Api
+# open http://localhost:5235
 ```
 
-Then open `http://localhost:4200` — see [`docs/frontend.md`](docs/frontend.md) for what it
-does and how it's built.
+```bash
+# Alternative: two-terminal dev mode with live reload (API above running first)
+cd web && npm ci && npm start
+# open http://localhost:4200
+```
+
+See [`docs/frontend.md`](docs/frontend.md) for what the console does and how it's built.
 
 ## Try it
 
@@ -102,5 +110,7 @@ k6 run loadtest/mixed.js    # requires the API running and k6 installed
 - `benchmarks/HighPerf.Benchmarks` — BenchmarkDotNet suite; results in `benchmarks/RESULTS.md`.
 - `loadtest/` — k6 scripts for per-endpoint and mixed-traffic load testing.
 - `tools/prepare-dataset.ps1` — regenerates the embedded dataset from GeoNames.
+- `tools/publish-web.ps1` — builds the Angular console and mirrors it into
+  `src/HighPerf.Api/wwwroot` for single-origin hosting (see [`docs/frontend.md`](docs/frontend.md)).
 - `web/` — the Angular "Flight Deck" map console for the API (see [`docs/frontend.md`](docs/frontend.md)).
 - `docs/` — architecture, performance techniques, API reference, benchmarks, frontend ([index](docs/index.md)).

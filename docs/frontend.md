@@ -17,7 +17,28 @@ glass panels with a monospace type for all data values. See
 
 ## Running it
 
-Two processes, two terminals. The API must be running for the web app to show live data.
+### Single-origin (recommended showcase mode)
+
+One process, one terminal. `tools/publish-web.ps1` builds the Angular production bundle
+(running `npm ci` first if `web/node_modules` is missing) and mirrors
+`web/dist/highperf-web/browser/*` into `src/HighPerf.Api/wwwroot`, which the API then serves
+alongside its own endpoints — see "API additions" below.
+
+```powershell
+pwsh tools/publish-web.ps1
+dotnet run -c Release --project src/HighPerf.Api
+```
+
+Open `http://localhost:5235` — the console and the API are the same origin, so every
+`fetch` the console makes is a same-origin relative request (`GEO_API_BASE_URL` resolves
+to `''` outside dev mode; `web/src/app/core/models.ts`). No CORS is involved, and there is
+nothing to rebuild in the API itself when only the web app changes — re-run
+`publish-web.ps1` and refresh the browser. `wwwroot/` is a build artifact
+(`.gitignore`d), always regenerated from `web/`, never committed.
+
+### Two-terminal dev mode
+
+For active development on the console, with live reload:
 
 ```bash
 # Terminal A — API (from the repo root)
@@ -30,10 +51,11 @@ npm start
 # ng serve → http://localhost:4200
 ```
 
-Open `http://localhost:4200` once both are up. The web app talks to the API at a
-hardcoded `http://localhost:5235` base URL (`web/src/app/core/models.ts`,
-`GEO_API_BASE_URL` injection token) — there is no environment-file switching in v1,
-since this is a local console for a local API.
+Open `http://localhost:4200` once both are up. In dev mode the web app talks to the API at
+a hardcoded `http://localhost:5235` base URL (`GEO_API_BASE_URL`'s factory returns that
+literal when `isDevMode()` is true); production builds instead resolve it to `''`
+(same-origin), which is what makes the single-origin mode above work without any
+environment-file switching.
 
 > **Prerelease dependency note:** `web/package.json` pins `@ngrx/signals` to
 > `^22.0.0-rc.0` — a release candidate, required because it is the first `@ngrx/signals`
@@ -162,7 +184,7 @@ would reject with a 400 (`geo-query.store.ts`, `setCount`/`setRadiusKm`/`setMinP
 
 ## API additions
 
-Two additions to `src/HighPerf.Api`, both scoped tightly to serve this console without
+Three additions to `src/HighPerf.Api`, scoped tightly to serve this console without
 touching the API's production behavior:
 
 1. **CORS — Development only.** `Program.cs` registers a named `"dev"` CORS policy
@@ -189,6 +211,22 @@ touching the API's production behavior:
    not a fresh compute); `/healthz` (uncached, no compute) never gets the header; a 400
    validation failure never gets the header either, since it returns before the compute
    call runs.
+3. **Single-origin static hosting.** `Program.cs` guards `UseDefaultFiles()` +
+   `UseStaticFiles()` behind `Directory.Exists(app.Environment.WebRootPath)`, placed before
+   `UseCors`/`UseOutputCache` so it can short-circuit a request before either middleware
+   sees it. `UseStaticFiles` doesn't throw when `wwwroot` is missing — it just serves
+   nothing — but the guard makes the "no client built" case (API-only runs, CI, a fresh
+   checkout before `tools/publish-web.ps1` has ever run) an explicit, documented no-op
+   instead of an implicit one. An `OnPrepareResponse` callback sets
+   `Cache-Control: no-cache` on `index.html` (the only file whose content can change without
+   its URL changing) and `Cache-Control: public,max-age=31536000,immutable` on everything
+   else (Angular's content-hashed filenames make every other asset safe to cache forever).
+   No response compression was added here — deliberate, to keep the JSON hot path
+   untouched. Covered by `tests/HighPerf.Api.Tests/StaticHostingTests.cs`: `/` serves
+   `index.html` with `no-cache`, a hashed asset gets the immutable long-lived header, the
+   geo endpoints keep working with static hosting enabled, and a `WebApplicationFactory`
+   pointed at a nonexistent web root still 404s on `/` (the guard actually skips the
+   middleware rather than relying on `UseStaticFiles`'s undocumented no-op behavior).
 
 ## Rendering performance
 
