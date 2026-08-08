@@ -12,13 +12,16 @@
 ## Command
 
 ```
-dotnet run -c Release --project benchmarks/HighPerf.Benchmarks -- --filter "*GeoBenchmarks*" --job short
+dotnet run -c Release --project benchmarks/HighPerf.Benchmarks -- --filter "*GeoBenchmarks*"
 ```
 
-Note: this was a smoke-run using BenchmarkDotNet's `short` (`ShortRun`) job preset
-(`IterationCount=3, LaunchCount=1, WarmupCount=3`) as specified in the task brief, rather than
-the default job — numbers are directional (confidence intervals are wide) but sufficient to
-validate relative ordering and the zero-allocation claim.
+Run with BenchmarkDotNet's **default job** (no `--job short`): 1 launch, auto-tuned invocation
+count, heuristic warmup and auto-terminated measurement — the pasted summary has no `Job=` line
+precisely because nothing was overridden. Every row's 99.9 % confidence margin is below 3 % of its
+mean (worst row 2.49 %), so these numbers are quotable as measured facts. Total wall time ~4.5 min.
+The dataset is the embedded GeoNames `cities1000` extract loaded by `GeoDatabase.LoadDefault()`
+(170,584 cities);
+all query benchmarks use the same Berlin query point (52.52, 13.405) unless the name says otherwise.
 
 ## Summary
 
@@ -26,42 +29,96 @@ validate relative ordering and the zero-allocation claim.
 BenchmarkDotNet v0.15.8, Windows 11 (10.0.26200.8875/25H2/2025Update/HudsonValley2)
 AMD Ryzen 5 3600X 3.80GHz, 1 CPU, 12 logical and 6 physical cores
 .NET SDK 10.0.302
-  [Host]   : .NET 10.0.10 (10.0.10, 10.0.1026.32716), X64 RyuJIT x86-64-v3
-  ShortRun : .NET 10.0.10 (10.0.10, 10.0.1026.32716), X64 RyuJIT x86-64-v3
-
-Job=ShortRun  IterationCount=3  LaunchCount=1
-WarmupCount=3
+  [Host]     : .NET 10.0.10 (10.0.10, 10.0.1026.32716), X64 RyuJIT x86-64-v3
+  DefaultJob : .NET 10.0.10 (10.0.10, 10.0.1026.32716), X64 RyuJIT x86-64-v3
 ```
 
-| Method                         | Mean             | Error            | StdDev        | Ratio | RatioSD | Allocated | Alloc Ratio |
-|------------------------------- |-----------------:|-----------------:|--------------:|------:|--------:|----------:|------------:|
-| Scalar_HaversineFullScan       | 6,664,077.604 ns | 1,618,644.477 ns | 88,723.366 ns | 1.000 |    0.02 |         - |          NA |
-| Simd_ChordFullScan             |    48,699.134 ns |    25,540.029 ns |  1,399.935 ns | 0.007 |    0.00 |         - |          NA |
-| Grid_FindWithin100km           |     8,550.883 ns |    10,404.613 ns |    570.312 ns | 0.001 |    0.00 |         - |          NA |
-| Grid_FindNearest10             |       920.351 ns |     1,344.879 ns |     73.717 ns | 0.000 |    0.00 |         - |          NA |
-| Grid_FindNearest10_SparseOcean |     2,866.194 ns |     3,761.993 ns |    206.208 ns | 0.000 |    0.00 |         - |          NA |
-| Scalar_HaversineSinglePair     |         9.237 ns |        19.456 ns |      1.066 ns | 0.000 |    0.00 |         - |          NA |
+| Method                          | Mean             | Error           | StdDev          | Median           | Ratio | RatioSD | Allocated | Alloc Ratio |
+|-------------------------------- |-----------------:|----------------:|----------------:|-----------------:|------:|--------:|----------:|------------:|
+| Scalar_HaversineFullScan        | 7,145,274.115 ns |  91,452.1508 ns |  85,544.3986 ns | 7,146,799.219 ns | 1.000 |    0.02 |         - |          NA |
+| Scalar_HaversineFullScanCollect | 6,621,386.120 ns | 130,050.9789 ns | 194,654.1977 ns | 6,571,652.344 ns | 0.927 |    0.03 |         - |          NA |
+| Scalar_ChordFullScan            |   367,699.328 ns |   5,592.4511 ns |  10,226.1140 ns |   366,068.677 ns | 0.051 |    0.00 |         - |          NA |
+| Simd_ChordFullScan              |    47,004.962 ns |     846.5560 ns |   1,070.6223 ns |    46,993.396 ns | 0.007 |    0.00 |         - |          NA |
+| Grid_FindWithin100km            |     9,086.349 ns |     180.8439 ns |     488.9220 ns |     9,236.084 ns | 0.001 |    0.00 |         - |          NA |
+| Grid_FindNearest10              |     1,077.659 ns |      21.1907 ns |      21.7613 ns |     1,077.815 ns | 0.000 |    0.00 |         - |          NA |
+| Grid_FindNearest10_SparseOcean  |     4,189.976 ns |      81.5212 ns |      97.0452 ns |     4,173.481 ns | 0.001 |    0.00 |         - |          NA |
+| Scalar_HaversineSinglePair      |         7.113 ns |       0.1769 ns |       0.2038 ns |         7.034 ns | 0.000 |    0.00 |         - |          NA |
+
+## What each benchmark measures
+
+| Benchmark | Metric | Work | Output |
+|---|---|---|---|
+| `Scalar_HaversineFullScan` | haversine (trig) | scalar loop over all cities | minimum distance |
+| `Scalar_HaversineFullScanCollect` | haversine (trig) | scalar loop over all cities | every city within 100 km |
+| `Scalar_ChordFullScan` | squared chord (trig-free) | scalar loop over all cities | every city within 100 km |
+| `Simd_ChordFullScan` | squared chord (trig-free) | `Vector<float>` loop over all cities | every city within 100 km |
+| `Grid_FindWithin100km` | squared chord (trig-free) | SIMD over grid candidate ranges only | every city within 100 km (top-1000) |
+| `Grid_FindNearest10` | squared chord (trig-free) | SIMD + expanding-radius grid search | 10 nearest |
+| `Grid_FindNearest10_SparseOcean` | as above, sparse query point | forces radius-expansion rounds | 10 nearest |
+| `Scalar_HaversineSinglePair` | haversine (trig) | one pair | one distance |
+
+## Speedup attribution
+
+The three middle rows are deliberately output-identical (same metric semantics, same
+`HitBuffer` result), so each factor isolates exactly one variable:
+
+| Step | From → To | Factor | What it isolates |
+|---|---|---|---|
+| Trig elimination | `Scalar_HaversineFullScanCollect` 6.62 ms → `Scalar_ChordFullScan` 367.7 us | **18.0x** | replacing per-point `Sin`/`Cos`/`Atan2` with squared-chord distance on precomputed unit vectors |
+| Vectorization | `Scalar_ChordFullScan` 367.7 us → `Simd_ChordFullScan` 47.0 us | **7.8x** | `Vector<float>` (8 lanes on this AVX2 host) over the same arithmetic — near-linear in lane count |
+| Both combined | `Scalar_HaversineFullScanCollect` 6.62 ms → `Simd_ChordFullScan` 47.0 us | **140.9x** | the full "trig-free + SIMD" kernel vs the naive trig scan |
+| Candidate pruning | `Simd_ChordFullScan` 47.0 us → `Grid_FindWithin100km` 9.09 us | **5.2x** | grid cell ranges cutting how much data the SIMD kernel touches |
+| End to end | `Scalar_HaversineFullScan` 7.15 ms → `Grid_FindWithin100km` 9.09 us | **786x** | naive baseline vs the shipped query path |
+| Nearest-k | `Scalar_HaversineFullScan` 7.15 ms → `Grid_FindNearest10` 1.08 us | **6,630x** | as above, plus bounded `TopK` selection instead of a full pass |
+
+Earlier revisions of this file quoted a single "137x SIMD speedup" against the min-only haversine
+baseline. That number conflated three independent variables (metric, vectorization, output); the
+table above replaces it. Note the honest split: **most of the win is trig elimination (18x), not
+vectorization (7.8x)** — vectorization is the smaller factor, though 7.8x on 8 lanes shows the
+kernel is essentially perfectly vectorized.
 
 ## Observations
 
-> **Stale as of the M1 review fix.** The `Grid_FindWithin*` numbers below predate the
-> candidate-range geometry correction and the bounded top-k selection in `FindWithin`
-> (`GeoDatabase.FindWithin` no longer collects and sorts every match). Re-run the suite before
-> quoting them. Measured out-of-band on the same machine, the 500 km Berlin query went from
-> ~800 us to ~615 us (median of 3 x 300 iterations, Release), still at 0 B allocated.
+- **Zero allocation, all eight benchmarks.** Every row reports `-` in `Allocated`, i.e. under
+  BenchmarkDotNet's `MemoryDiagnoser` no managed allocation is attributable to a single operation:
+  the grid query path (`GeoDatabase.FindWithin` / `FindNearest`), the `TopK` heap, the candidate
+  range buffers and `HitBuffer` all live on the stack or come from `ArrayPool`.
+- **Trig is the dominant cost of the naive approach.** `Scalar_HaversineSinglePair` at 7.1 ns times
+  170,584 cities predicts ~1.2 ms; the measured full scan is 6.6-7.1 ms, i.e. the isolated single-pair
+  call benefits from constant folding and a hot cache that the full scan does not get.
+- **Collecting hits is not what costs.** `Scalar_HaversineFullScanCollect` (6.62 ms) is marginally
+  *faster* than the min-only `Scalar_HaversineFullScan` (7.15 ms), a 7 % difference outside both
+  error bars but well below the factors being attributed. Whatever its cause (the two differ only in
+  their branch and in the `HitBuffer` writes), it confirms that collecting matches into `HitBuffer`
+  is not what the trig-vs-chord comparison above is measuring.
+- **Grid pruning pays off exactly where expected.** `Grid_FindWithin100km` (9.09 us) beats the SIMD
+  full scan (47.0 us) by 5.2x: the candidate ranges cut ~140 k points down to the few thousand in
+  the latitude/longitude window, and the SIMD kernel then only has to touch those.
+- **`FindWithin` after the M1 fix.** These are the first default-job numbers measured against the
+  corrected candidate-range geometry *and* the bounded `TopK` selection (`FindWithin` no longer
+  collects and sorts every match). 100 km / Berlin lands at 9.09 us versus 8.55 us +- 10.4 us in the
+  old `ShortRun` smoke run — i.e. indistinguishable at that radius, where the match count is far
+  below the 1000-result cap; the bounded selection is what pays at large radii, where the old
+  collect-and-sort had to grow a buffer for every match (measured out-of-band at 500 km: ~800 us
+  before, ~615 us after).
+- **Nearest-neighbour cost depends on density.** `Grid_FindNearest10` (1.08 us) finds its 10
+  neighbours inside the first 50 km radius round in dense Berlin. `Grid_FindNearest10_SparseOcean`
+  (4.19 us) is ~3.9x slower: the sparse South Pacific point forces several radius-quadrupling rounds,
+  each rescanning a larger candidate set.
 
-- **Zero-allocation proof**: `Grid_FindWithin100km` and `Grid_FindNearest10` both report `-`
-  (0 B) in the `Allocated` column — the grid query path (`GeoDatabase.FindWithin` /
-  `FindNearest`, the pooled/stack-allocated selection buffers and `TopK`) allocates nothing on
-  the managed heap per call. In fact all six benchmarks in this run show zero allocations.
-- **SIMD vs scalar**: `Simd_ChordFullScan` (48.7 us) is ~137x faster than
-  `Scalar_HaversineFullScan` (6.66 ms) — a full linear scan over the unit-vector arrays with
-  `Vector<float>` chord-distance comparisons beats the naive per-point Haversine scan by more
-  than two orders of magnitude, well past the "roughly an order of magnitude" expectation.
-- **Grid vs SIMD full scan**: `Grid_FindWithin100km` (8.55 us) beats `Simd_ChordFullScan`
-  (48.7 us) by ~5.7x — the grid-cell candidate-range pruning cuts the amount of data the SIMD
-  kernel has to touch.
-- **Nearest-neighbor**: `Grid_FindNearest10` (920 ns) is fast because Berlin sits in a
-  dense region (few radius-expansion rounds needed). `Grid_FindNearest10_SparseOcean` (2.87 us)
-  is ~3x slower, as expected, since the sparse South Pacific query point forces multiple radius
-  doubling rounds before 10 neighbors are found.
+## API hot path
+
+BenchmarkDotNet covers the `HighPerf.Geo` query path only. The allocation profile of the API
+endpoints themselves is measured by `HighPerf.Api.Tests/AllocationTests.cs`:
+
+| Measurement | Value | What it covers |
+|---|---|---|
+| `/cities/nearest` hot path, in-process | **160 B / request** | cache-key composition + span query parsing + validation + `FindNearest` + `CityJson.WriteCities` + `BodyWriter.FlushAsync`, on one thread, exact per-thread counting |
+| `/cities/nearest` end to end (TestServer) | ~101 KB / request | the above plus routing, output-cache store, TestServer and `HttpClient` — harness-dominated |
+| `/cities/within` end to end (TestServer) | ~110 KB / request | as above, with a several-hundred-city body |
+| cached replay, end to end (TestServer) | ~16-31 KB / request | output-cache hit, no handler execution |
+
+The 160 B figure is the meaningful one: it is the two documented per-request strings (the
+`X-Compute-Count` header value and the `GeoCacheKey` string) plus header bookkeeping, with **nothing
+proportional to the number of cities or bytes written**. The TestServer figures are a coarse
+gross-regression tripwire, not a statement about Kestrel's per-request cost.

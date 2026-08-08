@@ -45,6 +45,8 @@ public class GeohashEndpointTests(ApiFixture fixture)
     [InlineData("/geohash/encode?lat=91&lon=0")]
     [InlineData("/geohash/encode?lat=0&lon=0&precision=0")]
     [InlineData("/geohash/encode?lat=0&lon=0&precision=13")]
+    [InlineData("/geohash/encode?lat=NaN&lon=0")]  // parses as a double, must still be rejected
+    [InlineData("/geohash/encode?lat=0&lon=Infinity")]
     [InlineData("/geohash/decode")]
     [InlineData("/geohash/decode?hash=aaa")]
     public async Task InvalidInput_Returns400(string url)

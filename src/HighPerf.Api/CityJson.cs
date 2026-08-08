@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Pipelines;
 using System.Text.Json;
 using HighPerf.Geo;
@@ -45,6 +46,16 @@ internal static class CityJson
             }
             writer.WriteEndArray();
             writer.WriteEndObject();
+            // The exact body size is known here, before the headers go out, so declare it and keep
+            // the compute path off chunked framing (Kestrel otherwise falls back to chunked once the
+            // body has been advanced without a declared length). The output cache stores headers
+            // verbatim, so the cached replay inherits this Content-Length instead of chunking too.
+            // BytesPending alone is NOT the body size: Utf8JsonWriter.Grow() Advance()s the
+            // PipeWriter whenever the current buffer fills up (which /cities/within routinely does),
+            // moving those bytes into BytesCommitted. Only the sum is the whole body. Advance()
+            // does not start the response, so the headers are still mutable at this point.
+            Debug.Assert(!response.HasStarted, "Content-Length must be set before the headers are sent");
+            response.ContentLength = writer.BytesCommitted + writer.BytesPending;
             writer.Flush(); // commits to PipeWriter buffers; actual I/O flush is the caller's FlushAsync
         }
         finally

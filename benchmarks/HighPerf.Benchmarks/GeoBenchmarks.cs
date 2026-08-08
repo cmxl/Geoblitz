@@ -30,6 +30,50 @@ public class GeoBenchmarks
         return best;
     }
 
+    /// <summary>Same full scan as <see cref="Scalar_HaversineFullScan"/>, but producing the same
+    /// output as the chord benchmarks below (every city within 100 km, collected into a
+    /// <see cref="HitBuffer"/>). This is the apples-to-apples trig baseline: comparing it to
+    /// <see cref="Scalar_ChordFullScan"/> isolates the cost of the per-point Sin/Cos/Atan2.</summary>
+    [Benchmark]
+    public int Scalar_HaversineFullScanCollect()
+    {
+        var hits = new HitBuffer(1024);
+        try
+        {
+            for (var i = 0; i < _db.Count; i++)
+            {
+                var d = GeoMath.HaversineKm(52.52, 13.405, _db.GetLat(i), _db.GetLon(i));
+                if (d <= 100.0) hits.Add(i, (float)(d * d));
+            }
+            return hits.Count;
+        }
+        finally { hits.Dispose(); }
+    }
+
+    /// <summary>Trig-free chord-distance full scan with a plain scalar loop — deliberately mirrors
+    /// the scalar tail of <see cref="ChordKernel.ScanWithin"/> so that
+    /// <see cref="Simd_ChordFullScan"/> divided by this benchmark is the <em>vectorization</em>
+    /// factor alone, with the trig-elimination factor already factored out by
+    /// <see cref="Scalar_HaversineFullScanCollect"/>.</summary>
+    [Benchmark]
+    public int Scalar_ChordFullScan()
+    {
+        var hits = new HitBuffer(1024);
+        try
+        {
+            var (xs, ys, zs) = (_db.X, _db.Y, _db.Z);
+            var maxChordSq = GeoMath.KmToChordSq(100);
+            for (var i = 0; i < xs.Length; i++)
+            {
+                float dx = xs[i] - _qx, dy = ys[i] - _qy, dz = zs[i] - _qz;
+                var dsq = dx * dx + dy * dy + dz * dz;
+                if (dsq <= maxChordSq) hits.Add(i, dsq);
+            }
+            return hits.Count;
+        }
+        finally { hits.Dispose(); }
+    }
+
     [Benchmark]
     public int Simd_ChordFullScan()
     {

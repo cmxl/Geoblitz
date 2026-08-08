@@ -10,6 +10,25 @@ deliberate choice, measured with BenchmarkDotNet and exercised under load with k
 See [`docs/`](docs/index.md) for the full write-up: architecture, the performance
 techniques catalog, the API reference, and benchmark results.
 
+## Measured highlights
+
+Full linear scan of all 170,584 cities, collecting every city within 100 km — the same result
+set three ways, so each factor isolates one decision (BenchmarkDotNet default job, AMD Ryzen 5
+3600X, .NET 10; see [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md)):
+
+| Implementation | Time | Allocated | Factor |
+|---|---:|---:|---|
+| Scalar loop, haversine trig per city | 6.62 ms | 0 B | baseline |
+| Scalar loop, trig-free squared-chord distance | 367.7 us | 0 B | **18.0x** (trig elimination) |
+| `Vector<float>` SIMD, squared-chord distance | 47.0 us | 0 B | **7.8x** more (vectorization) |
+| Shipped path: grid candidate ranges + SIMD (`FindWithin`, 100 km) | 9.09 us | 0 B | **5.2x** more (pruning) |
+| Shipped path: `FindNearest`, k=10 | 1.08 us | 0 B | 6,630x vs. the naive baseline |
+
+At the HTTP layer, the `/cities/nearest` hot path (cache key, query parsing, validation, query,
+JSON write, flush) allocates a measured **160 B per request** — the two documented per-request
+strings and header bookkeeping, with nothing scaling per city or per byte
+(`tests/HighPerf.Api.Tests/AllocationTests.cs`).
+
 ## Quickstart
 
 Requires the .NET 10 SDK.
@@ -60,7 +79,7 @@ Full parameter reference, defaults, limits, and error shapes: [`docs/api.md`](do
 ## Development
 
 ```bash
-dotnet test                 # 83 tests: HighPerf.Geo.Tests + HighPerf.Api.Tests
+dotnet test                 # 160 tests: 79 HighPerf.Geo.Tests + 81 HighPerf.Api.Tests
 dotnet run -c Release --project benchmarks/HighPerf.Benchmarks -- --filter "*GeoBenchmarks*"
 k6 run loadtest/mixed.js    # requires the API running and k6 installed
 ```
@@ -69,7 +88,8 @@ k6 run loadtest/mixed.js    # requires the API running and k6 installed
 
 - `src/HighPerf.Geo` — the geo index and math library (no ASP.NET Core dependency).
 - `src/HighPerf.Api` — the minimal-API host: 6 endpoints, output caching, JSON writing.
-- `tests/` — xUnit test suites for both projects (83 tests total).
+- `tests/` — xUnit test suites for both projects (160 tests total, including the endpoint
+  allocation tripwire and the cache-validation regression suite).
 - `benchmarks/HighPerf.Benchmarks` — BenchmarkDotNet suite; results in `benchmarks/RESULTS.md`.
 - `loadtest/` — k6 scripts for per-endpoint and mixed-traffic load testing.
 - `tools/prepare-dataset.ps1` — regenerates the embedded dataset from GeoNames.

@@ -5,6 +5,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- lets the test project measure the internal hot path (QueryParams / CityJson / GeoCacheKey)
+         directly, without exporting those types as public API -->
+    <InternalsVisibleTo Include="HighPerf.Api.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
   </ItemGroup>
 

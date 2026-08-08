@@ -44,6 +44,29 @@ public class CachingTests(ApiFixture fixture)
         Assert.NotEqual(CountHeader(a), CountHeader(b));
     }
 
+    [Theory]
+    [InlineData("/cities/nearest?lat=41.421&lon=2.221&count=4")]
+    [InlineData("/cities/within?lat=41.422&lon=2.222&radiusKm=40")]
+    public async Task CachedReplay_IsByteIdenticalToTheComputedResponse(string url)
+    {
+        // The riskiest seam of the output-cache setup: the handler writes straight to
+        // Response.BodyWriter, and the middleware has to capture and replay exactly those bytes.
+        // NOTE: this test deliberately does not assert the response framing. TestServer buffers the
+        // body and HttpContentHeaders.ContentLength falls back to the buffered length, so it reports
+        // a Content-Length whether or not the server declared one — see ResponseFramingTests for the
+        // assertion that actually pins Content-Length down.
+        using var client = fixture.CreateClient();
+        var miss = await client.GetAsync(url, TestContext.Current.CancellationToken);
+        var hit = await client.GetAsync(url, TestContext.Current.CancellationToken);
+        miss.EnsureSuccessStatusCode();
+        hit.EnsureSuccessStatusCode();
+        Assert.Equal(CountHeader(miss), CountHeader(hit)); // the second one is the cached replay
+        var missBody = await miss.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken);
+        var hitBody = await hit.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(missBody, hitBody);
+        Assert.Equal(miss.Content.Headers.ContentType!.ToString(), hit.Content.Headers.ContentType!.ToString());
+    }
+
     [Fact]
     public async Task DifferentBucket_IsACacheMiss()
     {

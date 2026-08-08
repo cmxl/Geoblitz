@@ -24,6 +24,12 @@ public class DistanceEndpointTests(ApiFixture fixture)
     [InlineData("/distance?fromLat=91&fromLon=0&toLat=0&toLon=0")]               // lat out of range
     [InlineData("/distance?fromLat=0&fromLon=181&toLat=0&toLon=0")]              // lon out of range
     [InlineData("/distance?fromLat=abc&fromLon=0&toLat=0&toLon=0")]              // not a number
+    // non-finite: "NaN"/"Infinity" parse as doubles, so they must be rejected explicitly — every
+    // comparison against NaN is false, and serializing a NaN result would throw and yield a 500
+    [InlineData("/distance?fromLat=NaN&fromLon=0&toLat=0&toLon=0")]
+    [InlineData("/distance?fromLat=0&fromLon=NaN&toLat=0&toLon=0")]
+    [InlineData("/distance?fromLat=0&fromLon=0&toLat=Infinity&toLon=0")]
+    [InlineData("/distance?fromLat=0&fromLon=0&toLat=0&toLon=-Infinity")]
     public async Task InvalidInput_Returns400Problem(string url)
     {
         using var client = fixture.CreateClient();

@@ -38,16 +38,23 @@ app.UseOutputCache();
 
 app.MapGet("/healthz", () => Results.Text("ok"));
 
+// NOTE on the range guards below: they are written as `x is not (>= lo and <= hi)` rather than
+// `x is < lo or > hi`. The two differ for NaN — every comparison against NaN is false, so the
+// "or" form accepts `lat=NaN` (which `double.TryParse` happily produces from the literal "NaN"),
+// letting a nonsense query through to a 200 with an empty result set, and making /distance
+// serialize a NaN, which System.Text.Json rejects with an exception → 500. The inclusive-range
+// form rejects NaN and both infinities, matching what docs/api.md promises.
+
 app.MapGet("/distance", (HttpContext ctx, ComputeCounter counter) =>
 {
     var qs = (ctx.Request.QueryString.Value ?? "").AsSpan();
-    if (!QueryParams.TryGetDouble(qs, "fromLat", out var fromLat) || fromLat is < -90 or > 90)
+    if (!QueryParams.TryGetDouble(qs, "fromLat", out var fromLat) || fromLat is not (>= -90 and <= 90))
         return Problems.Validation("fromLat must be a number in [-90, 90]");
-    if (!QueryParams.TryGetDouble(qs, "fromLon", out var fromLon) || fromLon is < -180 or > 180)
+    if (!QueryParams.TryGetDouble(qs, "fromLon", out var fromLon) || fromLon is not (>= -180 and <= 180))
         return Problems.Validation("fromLon must be a number in [-180, 180]");
-    if (!QueryParams.TryGetDouble(qs, "toLat", out var toLat) || toLat is < -90 or > 90)
+    if (!QueryParams.TryGetDouble(qs, "toLat", out var toLat) || toLat is not (>= -90 and <= 90))
         return Problems.Validation("toLat must be a number in [-90, 90]");
-    if (!QueryParams.TryGetDouble(qs, "toLon", out var toLon) || toLon is < -180 or > 180)
+    if (!QueryParams.TryGetDouble(qs, "toLon", out var toLon) || toLon is not (>= -180 and <= 180))
         return Problems.Validation("toLon must be a number in [-180, 180]");
     ctx.Response.Headers["X-Compute-Count"] = counter.Increment().ToString();
     return Results.Json(new DistanceResponse(GeoMath.HaversineKm(fromLat, fromLon, toLat, toLon)),
@@ -57,9 +64,9 @@ app.MapGet("/distance", (HttpContext ctx, ComputeCounter counter) =>
 app.MapGet("/cities/nearest", (HttpContext ctx, GeoDatabase db, ComputeCounter counter) =>
 {
     var qs = (ctx.Request.QueryString.Value ?? "").AsSpan();
-    if (!QueryParams.TryGetDouble(qs, "lat", out var lat) || lat is < -90 or > 90)
+    if (!QueryParams.TryGetDouble(qs, "lat", out var lat) || lat is not (>= -90 and <= 90))
         return Problems.Validation("lat must be a number in [-90, 90]").ExecuteAsync(ctx);
-    if (!QueryParams.TryGetDouble(qs, "lon", out var lon) || lon is < -180 or > 180)
+    if (!QueryParams.TryGetDouble(qs, "lon", out var lon) || lon is not (>= -180 and <= 180))
         return Problems.Validation("lon must be a number in [-180, 180]").ExecuteAsync(ctx);
     var count = 5;
     if (QueryParams.TryGetRaw(qs, "count", out _) &&
@@ -76,11 +83,11 @@ app.MapGet("/cities/nearest", (HttpContext ctx, GeoDatabase db, ComputeCounter c
 app.MapGet("/cities/within", (HttpContext ctx, GeoDatabase db, ComputeCounter counter) =>
 {
     var qs = (ctx.Request.QueryString.Value ?? "").AsSpan();
-    if (!QueryParams.TryGetDouble(qs, "lat", out var lat) || lat is < -90 or > 90)
+    if (!QueryParams.TryGetDouble(qs, "lat", out var lat) || lat is not (>= -90 and <= 90))
         return Problems.Validation("lat must be a number in [-90, 90]").ExecuteAsync(ctx);
-    if (!QueryParams.TryGetDouble(qs, "lon", out var lon) || lon is < -180 or > 180)
+    if (!QueryParams.TryGetDouble(qs, "lon", out var lon) || lon is not (>= -180 and <= 180))
         return Problems.Validation("lon must be a number in [-180, 180]").ExecuteAsync(ctx);
-    if (!QueryParams.TryGetDouble(qs, "radiusKm", out var radiusKm) || radiusKm is <= 0 or > 500)
+    if (!QueryParams.TryGetDouble(qs, "radiusKm", out var radiusKm) || radiusKm is not (> 0 and <= 500))
         return Problems.Validation("radiusKm is required and must be in (0, 500]").ExecuteAsync(ctx);
     var minPopulation = 0;
     if (QueryParams.TryGetRaw(qs, "minPopulation", out _) &&
@@ -104,9 +111,9 @@ app.MapGet("/cities/within", (HttpContext ctx, GeoDatabase db, ComputeCounter co
 app.MapGet("/geohash/encode", (HttpContext ctx, ComputeCounter counter) =>
 {
     var qs = (ctx.Request.QueryString.Value ?? "").AsSpan();
-    if (!QueryParams.TryGetDouble(qs, "lat", out var lat) || lat is < -90 or > 90)
+    if (!QueryParams.TryGetDouble(qs, "lat", out var lat) || lat is not (>= -90 and <= 90))
         return Problems.Validation("lat must be a number in [-90, 90]");
-    if (!QueryParams.TryGetDouble(qs, "lon", out var lon) || lon is < -180 or > 180)
+    if (!QueryParams.TryGetDouble(qs, "lon", out var lon) || lon is not (>= -180 and <= 180))
         return Problems.Validation("lon must be a number in [-180, 180]");
     var precision = 9;
     if (QueryParams.TryGetRaw(qs, "precision", out _) &&
