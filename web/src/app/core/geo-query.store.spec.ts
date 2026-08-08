@@ -45,6 +45,24 @@ describe('GeoQueryStore', () => {
     expect(store.minPopulation()).toBe(0);
   });
 
+  it('falls back to the current value when a clamp input is not finite', () => {
+    store.setCount(42);
+    store.setCount(NaN);
+    expect(store.count()).toBe(42);
+    store.setCount(Infinity);
+    expect(store.count()).toBe(42);
+
+    store.setRadiusKm(75);
+    store.setRadiusKm(NaN);
+    expect(store.radiusKm()).toBe(75);
+    store.setRadiusKm(-Infinity);
+    expect(store.radiusKm()).toBe(75);
+
+    store.setMinPopulation(1234);
+    store.setMinPopulation(NaN);
+    expect(store.minPopulation()).toBe(1234);
+  });
+
   it('queryNearest stores results and the query point', async () => {
     api.nearest.mockResolvedValue(citiesResult(3, 1));
     await store.queryNearest(48.1, 11.5);
@@ -75,6 +93,24 @@ describe('GeoQueryStore', () => {
     expect(store.timings()[0].computeCount).toBe(6);
   });
 
+  it('treats a large downward jump in computeCount as a server restart, not a HIT', async () => {
+    api.nearest.mockResolvedValueOnce(citiesResult(1, 5));
+    await store.queryNearest(1, 1);
+    expect(store.lastTiming()!.cacheHit).toBe(false);
+    expect(store.maxComputeCount()).toBe(5);
+
+    api.nearest.mockResolvedValueOnce(citiesResult(1, 6));
+    await store.queryNearest(2, 2);
+    expect(store.lastTiming()!.cacheHit).toBe(false);
+    expect(store.maxComputeCount()).toBe(6);
+
+    // Server restarted: counter resets to 1, which is well below half of the previous max (6).
+    api.nearest.mockResolvedValueOnce(citiesResult(1, 1));
+    await store.queryNearest(3, 3);
+    expect(store.lastTiming()!.cacheHit).toBe(false);
+    expect(store.maxComputeCount()).toBe(1);
+  });
+
   it('surfaces problem details as inline error and keeps results', async () => {
     api.nearest.mockResolvedValueOnce(citiesResult(2, 1));
     await store.queryNearest(1, 1);
@@ -94,6 +130,36 @@ describe('GeoQueryStore', () => {
     api.nearest.mockResolvedValueOnce(citiesResult(1, 9));
     await store.queryNearest(1, 1);
     expect(store.linkDown()).toBe(false);
+  });
+
+  it('routes a 5xx GeoApiError to linkDown, not the inline error', async () => {
+    api.nearest.mockRejectedValueOnce(
+      new GeoApiError({
+        title: 'Internal error',
+        status: 500,
+        detail: 'An unexpected error occurred.',
+      }),
+    );
+    await store.queryNearest(1, 1);
+    expect(store.linkDown()).toBe(true);
+    expect(store.error()).toBeNull();
+  });
+
+  it('a sub-500 GeoApiError after an outage clears linkDown and sets the inline error', async () => {
+    api.nearest.mockRejectedValueOnce(new TypeError('fetch failed'));
+    await store.queryNearest(1, 1);
+    expect(store.linkDown()).toBe(true);
+
+    api.nearest.mockRejectedValueOnce(
+      new GeoApiError({
+        title: 'Invalid request',
+        status: 400,
+        detail: 'count must be an integer in [1, 100]',
+      }),
+    );
+    await store.queryNearest(1, 1);
+    expect(store.linkDown()).toBe(false);
+    expect(store.error()).toBe('count must be an integer in [1, 100]');
   });
 
   it('ruler: two points trigger distance, third restarts', async () => {
@@ -121,5 +187,67 @@ describe('GeoQueryStore', () => {
     expect(store.results().length).toBe(0);
     expect(store.highlightedIndex()).toBeNull();
     expect(store.error()).toBeNull();
+  });
+
+  describe('queryWithin', () => {
+    it('calls api.within with lat, lon, and radiusKm/minPopulation from state', async () => {
+      store.setRadiusKm(75);
+      store.setMinPopulation(50_000);
+      api.within.mockResolvedValueOnce(citiesResult(2, 1));
+      await store.queryWithin(48.1, 11.5);
+      expect(api.within).toHaveBeenCalledWith(48.1, 11.5, 75, 50_000);
+    });
+
+    it('clamps an optional radiusKm override before calling api.within', async () => {
+      api.within.mockResolvedValueOnce(citiesResult(1, 1));
+      await store.queryWithin(48.1, 11.5, 9999);
+      expect(store.radiusKm()).toBe(500);
+      expect(api.within).toHaveBeenCalledWith(48.1, 11.5, 500, 0);
+    });
+
+    it('ignores a non-finite radiusKm override and keeps the current value', async () => {
+      store.setRadiusKm(20);
+      api.within.mockResolvedValueOnce(citiesResult(1, 1));
+      await store.queryWithin(48.1, 11.5, NaN);
+      expect(store.radiusKm()).toBe(20);
+      expect(api.within).toHaveBeenCalledWith(48.1, 11.5, 20, 0);
+    });
+
+    it('applies results and the query point', async () => {
+      api.within.mockResolvedValueOnce(citiesResult(4, 1));
+      await store.queryWithin(48.1, 11.5);
+      expect(store.results().length).toBe(4);
+      expect(store.queryPoint()).toEqual({ lat: 48.1, lon: 11.5 });
+      expect(store.highlightedIndex()).toBeNull();
+    });
+  });
+
+  describe('in-flight request sequencing', () => {
+    it('discards a stale response when a newer request resolves first', async () => {
+      let resolveFirst!: (r: ApiResult<CitiesResponse>) => void;
+      let resolveSecond!: (r: ApiResult<CitiesResponse>) => void;
+      api.nearest
+        .mockImplementationOnce(
+          () => new Promise<ApiResult<CitiesResponse>>((res) => (resolveFirst = res)),
+        )
+        .mockImplementationOnce(
+          () => new Promise<ApiResult<CitiesResponse>>((res) => (resolveSecond = res)),
+        );
+
+      const first = store.queryNearest(1, 1);
+      const second = store.queryNearest(2, 2);
+
+      // Newer request (second) resolves first; older (first) resolves after.
+      resolveSecond(citiesResult(2, 20));
+      await second;
+      resolveFirst(citiesResult(1, 10));
+      await first;
+
+      expect(store.results().length).toBe(2);
+      expect(store.queryPoint()).toEqual({ lat: 2, lon: 2 });
+      expect(store.lastTiming()!.computeCount).toBe(20);
+      expect(store.timings().length).toBe(1);
+      expect(store.busy()).toBe(false);
+    });
   });
 });

@@ -53,12 +53,28 @@ describe('GeoApiService', () => {
     expect(r.httpMillis).toBeGreaterThanOrEqual(0);
   });
 
+  it('builds the distance URL with all params in order', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ kilometers: 0 }));
+    await service.distance(52.52, 13.405, 48.1374, 11.5755);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:5235/distance?fromLat=52.52&fromLon=13.405&toLat=48.1374&toLon=11.5755',
+    );
+  });
+
   it('returns nulls when timing headers are absent', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ kilometers: 504.2 }));
     const r = await service.distance(52.52, 13.405, 48.1374, 11.5755);
     expect(r.engineMicros).toBeNull();
     expect(r.computeCount).toBeNull();
     expect(r.data.kilometers).toBeCloseTo(504.2, 5);
+  });
+
+  it('returns null engine micros for an unparseable Server-Timing header', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ count: 0, cities: [] }, { 'Server-Timing': 'engine;dur=abc' }),
+    );
+    const r = await service.nearest(1, 2, 3);
+    expect(r.engineMicros).toBeNull();
   });
 
   it('throws GeoApiError with problem details on 400', async () => {

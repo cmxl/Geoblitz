@@ -147,9 +147,10 @@ app.MapGet("/geohash/encode", (HttpContext ctx, ComputeCounter counter) =>
 app.MapGet("/geohash/decode", (HttpContext ctx, ComputeCounter counter) =>
 {
     var qs = (ctx.Request.QueryString.Value ?? "").AsSpan();
+    if (!QueryParams.TryGetRaw(qs, "hash", out var hash))
+        return Problems.Validation("hash is required and must be a valid geohash (1-12 base32 chars)");
     var start = Stopwatch.GetTimestamp();
-    if (!QueryParams.TryGetRaw(qs, "hash", out var hash)
-        || !Geohash.TryDecode(hash, out var lat, out var lon, out var latErr, out var lonErr))
+    if (!Geohash.TryDecode(hash, out var lat, out var lon, out var latErr, out var lonErr))
         return Problems.Validation("hash is required and must be a valid geohash (1-12 base32 chars)");
     ServerTiming.Set(ctx, start);
     ctx.Response.Headers["X-Compute-Count"] = counter.Increment().ToString();

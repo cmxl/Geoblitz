@@ -39,6 +39,11 @@ const initialState: GeoQueryState = {
 
 const MAX_TIMINGS = 40;
 
+/** Clamps `n` to `[min, max]`. Callers apply `Math.trunc` themselves for integer fields. */
+function clamp(n: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, n));
+}
+
 export const GeoQueryStore = signalStore(
   { providedIn: 'root' },
   withState(initialState),
@@ -46,43 +51,82 @@ export const GeoQueryStore = signalStore(
     lastTiming: computed<RequestTiming | null>(() => timings().at(-1) ?? null),
   })),
   withMethods((store, api = inject(GeoApiService)) => {
+    // Restart-safe cache-hit heuristic.
+    //
+    // A HIT replays the exact computeCount recorded when an entry was cached, which can lag
+    // behind maxComputeCount because other (unrelated) cache misses advance the counter in the
+    // meantime. We accept any computeCount <= maxComputeCount within a margin of 10_000 as a HIT.
+    //
+    // A dev API restart resets the server-side counter to a small number, which would otherwise
+    // satisfy computeCount <= maxComputeCount forever, reporting HIT permanently (MINOR-3). We
+    // treat a computeCount below half of maxComputeCount as "probably a restart, not a cache
+    // hit" and reset maxComputeCount to it.
+    //
+    // Trade-off: a legitimately very old cached entry whose computeCount is less than half of
+    // the current max is misreported as a restart/MISS instead of a HIT. That's judged safer
+    // than reporting HIT forever after a real restart.
     function pushTiming(r: ApiResult<unknown>): void {
-      const cacheHit = r.computeCount !== null && r.computeCount <= store.maxComputeCount();
+      const max = store.maxComputeCount();
+      const cc = r.computeCount;
+      const isRestart = cc !== null && cc < max * 0.5;
+      const isHit = !isRestart && cc !== null && cc <= max && max - cc <= 10_000;
       const timing: RequestTiming = {
         engineMicros: r.engineMicros,
         httpMillis: r.httpMillis,
-        computeCount: r.computeCount,
-        cacheHit,
+        computeCount: cc,
+        cacheHit: isHit,
         at: Date.now(),
       };
       patchState(store, {
         timings: [...store.timings(), timing].slice(-MAX_TIMINGS),
-        maxComputeCount: cacheHit
-          ? store.maxComputeCount()
-          : Math.max(store.maxComputeCount(), r.computeCount ?? 0),
+        maxComputeCount: isRestart ? (cc as number) : isHit ? max : Math.max(max, cc ?? 0),
       });
     }
+
+    // Per-store monotonically increasing sequence number. A response only applies its results
+    // (and timing/error/linkDown side effects) if it is still the latest in-flight request when
+    // it resolves; stale out-of-order responses are discarded entirely.
+    let requestSeq = 0;
 
     async function run<T>(
       call: () => Promise<ApiResult<T>>,
       apply: (r: ApiResult<T>) => void,
     ): Promise<void> {
+      const seq = ++requestSeq;
       patchState(store, { busy: true, error: null });
       try {
         const r = await call();
+        if (seq !== requestSeq) return; // superseded by a newer request; discard
         apply(r);
         pushTiming(r);
         patchState(store, { linkDown: false });
       } catch (e) {
-        if (e instanceof GeoApiError) patchState(store, { error: e.problem.detail });
-        else patchState(store, { linkDown: true });
+        if (seq !== requestSeq) return; // superseded by a newer request; discard
+        if (e instanceof GeoApiError) {
+          if (e.problem.status >= 500) {
+            // Server error: the link itself is fine, but the server is failing hard — treat like
+            // a connectivity problem rather than a user-actionable inline error.
+            patchState(store, { linkDown: true });
+          } else {
+            // Client error (4xx): the round trip succeeded, so the link is proven up.
+            patchState(store, { error: e.problem.detail, linkDown: false });
+          }
+        } else {
+          patchState(store, { linkDown: true });
+        }
       } finally {
-        patchState(store, { busy: false });
+        if (seq === requestSeq) patchState(store, { busy: false });
       }
+    }
+
+    function setRadiusKm(n: number): void {
+      const current = store.radiusKm();
+      patchState(store, { radiusKm: Number.isFinite(n) ? clamp(n, 0.1, 500) : current });
     }
 
     return {
       setMode(mode: QueryMode): void {
+        requestSeq++; // stale in-flight responses from the previous mode must not land here
         patchState(store, {
           mode,
           results: [],
@@ -93,13 +137,17 @@ export const GeoQueryStore = signalStore(
         });
       },
       setCount(n: number): void {
-        patchState(store, { count: Math.min(100, Math.max(1, Math.trunc(n))) });
+        const current = store.count();
+        patchState(store, {
+          count: Number.isFinite(n) ? clamp(Math.trunc(n), 1, 100) : current,
+        });
       },
-      setRadiusKm(n: number): void {
-        patchState(store, { radiusKm: Math.min(500, Math.max(0.1, n)) });
-      },
+      setRadiusKm,
       setMinPopulation(n: number): void {
-        patchState(store, { minPopulation: Math.max(0, Math.trunc(n)) });
+        const current = store.minPopulation();
+        patchState(store, {
+          minPopulation: Number.isFinite(n) ? Math.max(0, Math.trunc(n)) : current,
+        });
       },
       highlight(index: number | null): void {
         patchState(store, { highlightedIndex: index });
@@ -115,8 +163,7 @@ export const GeoQueryStore = signalStore(
         );
       },
       queryWithin(lat: number, lon: number, radiusKm?: number): Promise<void> {
-        if (radiusKm !== undefined)
-          patchState(store, { radiusKm: Math.min(500, Math.max(0.1, radiusKm)) });
+        if (radiusKm !== undefined) setRadiusKm(radiusKm);
         patchState(store, { queryPoint: { lat, lon } });
         return run(
           () => api.within(lat, lon, store.radiusKm(), store.minPopulation()),
