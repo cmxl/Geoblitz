@@ -14,7 +14,12 @@ export function buildQueryPin(lat: number, lon: number): L.CircleMarker {
   });
 }
 
-export function buildResultPin(city: CityHit, index: number, highlighted: boolean): L.CircleMarker {
+export function buildResultPin(
+  city: CityHit,
+  index: number,
+  highlighted: boolean,
+  onHover?: (index: number | null) => void,
+): L.CircleMarker {
   const pin = L.circleMarker([city.lat, city.lon], {
     radius: highlighted ? 8 : 5,
     color: AMBER,
@@ -23,6 +28,10 @@ export function buildResultPin(city: CityHit, index: number, highlighted: boolea
     fillOpacity: highlighted ? 0.8 : 0.5,
   });
   pin.bindTooltip(`${city.name} · ${city.distanceKm.toFixed(3)} km`, { direction: 'top' });
+  if (onHover) {
+    pin.on('mouseover', () => onHover(index));
+    pin.on('mouseout', () => onHover(null));
+  }
   return pin;
 }
 

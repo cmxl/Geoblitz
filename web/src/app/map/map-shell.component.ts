@@ -143,7 +143,11 @@ export class MapShellComponent {
       if (mode === 'within')
         this.layers.addLayer(buildRadiusCircle(queryPoint.lat, queryPoint.lon, radiusKm));
     }
-    results.forEach((city, i) => this.layers.addLayer(buildResultPin(city, i, highlighted === i)));
+    results.forEach((city, i) =>
+      this.layers.addLayer(
+        buildResultPin(city, i, highlighted === i, (idx) => this.store.highlight(idx)),
+      ),
+    );
     if (mode === 'distance' && rulerPoints.length > 0) {
       rulerPoints.forEach((p) => this.layers.addLayer(buildQueryPin(p.lat, p.lon)));
       if (rulerPoints.length === 2) {
