@@ -490,3 +490,6 @@ $RECYCLE.BIN/
 
 # Angular/Vite build cache (written by dev-server runs from repo root)
 /.angular/
+
+# playwright-cli session snapshots (browser automation scratch)
+/.playwright-cli/
