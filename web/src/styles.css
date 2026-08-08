@@ -1,1 +1,74 @@
-/* You can add global styles to this file, and also import other style files */
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/600.css';
+@import 'leaflet/dist/leaflet.css';
+
+:root {
+  --fd-ground: #0b1118;
+  --fd-map: #0d141c;
+  --fd-glass: rgba(13, 21, 30, 0.82);
+  --fd-line: rgba(94, 200, 255, 0.16);
+  --fd-cyan: #54d7ff;
+  --fd-amber: #ffd166;
+  --fd-muted: #6f8ba0;
+  --fd-text: #dfe9f0;
+  --fd-red: #ff5d5d;
+  --fd-mono: 'JetBrains Mono', Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--fd-ground);
+  color: var(--fd-text);
+  font:
+    14px/1.5 'Segoe UI',
+    system-ui,
+    sans-serif;
+  overflow: hidden;
+}
+
+/* dark-filter the OSM raster tiles into the Flight Deck palette */
+.leaflet-tile-pane {
+  filter: invert(1) hue-rotate(200deg) saturate(0.55) brightness(0.72) contrast(0.9);
+}
+.leaflet-container {
+  background: var(--fd-map);
+  font: inherit;
+}
+.leaflet-control-attribution {
+  background: var(--fd-glass) !important;
+  color: var(--fd-muted) !important;
+  font: 10px/1.6 var(--fd-mono) !important;
+}
+.leaflet-control-attribution a {
+  color: var(--fd-cyan) !important;
+}
+
+.fd-card {
+  background: var(--fd-glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--fd-line);
+  border-radius: 10px;
+}
+.fd-label {
+  font: 600 11px/1 var(--fd-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fd-muted);
+}
+:focus-visible {
+  outline: 2px solid var(--fd-cyan);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
