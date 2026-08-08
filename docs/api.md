@@ -5,8 +5,12 @@
 Base URL for local development: `http://localhost:5235` (see
 `src/HighPerf.Api/Properties/launchSettings.json`; `dotnet run -c Release --project src/HighPerf.Api`).
 
-All responses are `application/json; charset=utf-8` unless noted. All six endpoints below
-are `GET`-only and cached — see [Caching semantics](#caching-semantics).
+All responses are `application/json; charset=utf-8` unless noted. All six endpoints below are
+`GET`-only; the five geo endpoints are output-cached (`/healthz` is not) — see
+[Caching semantics](#caching-semantics). `/cities/nearest` and `/cities/within` declare
+`Content-Length` (they write the body directly and know its size up front); `/distance` and the
+two `/geohash/*` endpoints go through `Results.Json`, which does not set one, so HTTP/1.1 sends
+those with chunked framing. A cached replay is byte-identical to the response it replays.
 
 ## `GET /healthz`
 
@@ -143,6 +147,11 @@ GET /geohash/decode?hash=u4pruydqqvj
 
 ## Error shape
 
+A parameter is invalid — and the request is answered `400` — if it is absent while required,
+unparseable, or outside the documented range. Non-finite values count as out of range: `NaN`,
+`Infinity` and `-Infinity` parse as numbers but are rejected for every coordinate and for
+`radiusKm`.
+
 All validation failures return `400 Bad Request` with `application/problem+json`:
 
 ```json
@@ -163,11 +172,25 @@ a shared `"Geo"` policy:
 
 - **TTL**: 10 minutes (`Expire(TimeSpan.FromMinutes(10))`).
 - **Cache key**: the default query-string vary is disabled (`SetVaryByQuery([])`) and
-  replaced by a computed key (`GeoCacheKey.Compute`) that rounds every coordinate
-  parameter (`lat`, `lon`, `fromLat`, `fromLon`, `toLat`, `toLon`) to 3 decimal degrees
-  (~110 m buckets at the equator) and includes the exact `count` / `radiusKm` /
-  `minPopulation` / `precision` / `hash` values. Two requests whose coordinates round to
-  the same bucket and whose other parameters match exactly share one cache entry.
+  replaced by a computed key (`GeoCacheKey.Compute`). Coordinate parameters (`lat`, `lon`,
+  `fromLat`, `fromLon`, `toLat`, `toLon`) are rounded to 3 decimal degrees (~110 m buckets at
+  the equator); `count` / `radiusKm` / `minPopulation` / `precision` are canonicalized (so
+  `count=3` and `count=03` share an entry) and `hash` is taken verbatim. Two requests whose
+  coordinates round to the same bucket and whose other parameters are equivalent share one
+  cache entry — meaning the response you get may have been computed for a point up to ~110 m
+  from the one you sent. Query parameters that are not in this list (and unknown parameters)
+  do not affect the key at all.
+- **Validation is never bypassed by the cache.** The key also encodes, per parameter, whether
+  it was absent, present-and-valid, or present-and-invalid, and each value goes in as a
+  length-prefixed field so that a value containing the key's own separator cannot forge another
+  request's key. A request that violates the ranges documented above therefore can never share a
+  cache entry with a valid one and always reaches the handler that rejects it: `?...&count=abc`
+  returns `400` whether or not a valid request for the same coordinates was cached a moment
+  earlier. (400s themselves are never cached: the policy inherits `DefaultPolicy`, which stores
+  only `200` responses.)
+- **Values are not percent-decoded** before parsing or key composition — all parameters are
+  numbers or geohash base32, none of which `encodeURIComponent` escapes. A percent-encoded
+  value (e.g. `lat=%2B44.5`) is treated as invalid and returns `400`.
 - **Observability**: every actual computation increments a process-wide counter and
   returns it as `X-Compute-Count`. Because `OutputCache` replays the entire stored
   response — including headers — on a hit, a cache hit returns the *same*

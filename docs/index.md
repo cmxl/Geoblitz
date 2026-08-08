@@ -7,7 +7,7 @@ geospatial queries — nearest cities, cities within a radius, great-circle dist
 geohash encode/decode — over the real GeoNames `cities1000` dataset (170,584 cities), and
 uses the exercise to demonstrate a catalog of concrete, measured performance techniques in
 a .NET 10 minimal API: struct-of-arrays layout, SIMD scans, zero-allocation query paths,
-source-generated JSON, and output caching with a quantized cache key.
+source-generated JSON, and output caching with a quantized, validity-aware cache key.
 
 Read the docs in this order if you're new to the project:
 
@@ -40,7 +40,7 @@ explained where they matter:
 - [`README.md`](../README.md) — project pitch and quickstart.
 - `src/HighPerf.Geo` — the geo index and math library.
 - `src/HighPerf.Api` — the minimal-API host.
-- `tests/` — 83 xUnit tests across both projects.
+- `tests/` — 160 xUnit tests across both projects (79 geo, 81 API).
 - `benchmarks/` — BenchmarkDotNet suite and [`RESULTS.md`](../benchmarks/RESULTS.md).
 - `loadtest/` — k6 scripts.
 - `tools/prepare-dataset.ps1` — regenerates the embedded dataset.

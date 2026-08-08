@@ -70,6 +70,13 @@ public class CitiesEndpointTests(ApiFixture fixture)
     [InlineData("/cities/within?lat=0&lon=0&radiusKm=0")]
     [InlineData("/cities/within?lat=0&lon=0&radiusKm=501")]
     [InlineData("/cities/within?lat=0&lon=0&radiusKm=10&minPopulation=-1")]
+    // non-finite values parse as doubles but compare false against every range bound, so they must
+    // be rejected explicitly rather than silently answered with an empty result set
+    [InlineData("/cities/nearest?lat=NaN&lon=0")]
+    [InlineData("/cities/nearest?lat=0&lon=NaN")]
+    [InlineData("/cities/nearest?lat=Infinity&lon=0")]
+    [InlineData("/cities/within?lat=NaN&lon=0&radiusKm=10")]
+    [InlineData("/cities/within?lat=0&lon=0&radiusKm=NaN")]
     public async Task InvalidInput_Returns400(string url)
     {
         using var client = fixture.CreateClient();

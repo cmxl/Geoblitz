@@ -12,7 +12,7 @@ HighPerformance.slnx
 │   │   ├── GeoMath.cs       # Haversine, unit-vector conversion, chord<->km
 │   │   ├── ChordKernel.cs   # Vector<float> SIMD distance scans
 │   │   ├── TopK.cs          # stackalloc-backed bounded max-heap (ref struct)
-│   │   ├── HitBuffer.cs     # ArrayPool-backed growable hit list
+│   │   ├── HitBuffer.cs     # ArrayPool-backed growable hit list (unbounded ScanWithin only)
 │   │   ├── Geohash.cs       # geohash encode/decode
 │   │   ├── CityTableParser.cs / ParsedCities.cs  # gzip TSV -> parallel arrays
 │   │   ├── GeoHit.cs        # (Index, DistanceKm) result record struct
@@ -20,7 +20,7 @@ HighPerformance.slnx
 │   └── HighPerf.Api/        # minimal-API host
 │       ├── Program.cs       # host setup, output-cache policy, 6 endpoint definitions
 │       ├── QueryParams.cs   # span-based query-string parsing
-│       ├── GeoCacheKey.cs   # quantized cache-key computation for OutputCache
+│       ├── GeoCacheKey.cs   # validity-aware, quantized cache-key computation for OutputCache
 │       ├── ComputeCounter.cs
 │       ├── CityJson.cs      # pooled Utf8JsonWriter -> PipeWriter city serialization
 │       └── ApiTypes.cs      # response/problem records + source-generated JsonSerializerContext
@@ -70,7 +70,7 @@ graph TD
     subgraph GEO["HighPerf.Geo"]
         GD["GeoDatabase<br/>(struct-of-arrays, CSR grid)"]
         CK["ChordKernel<br/>(Vector&lt;float&gt; SIMD scan)"]
-        TK["TopK / HitBuffer<br/>(stackalloc / ArrayPool)"]
+        TK["TopK bounded selection<br/>(stackalloc / ArrayPool)"]
         GM["GeoMath / Geohash"]
     end
     Res[("Embedded resource<br/>cities.tsv.gz")]
@@ -101,7 +101,7 @@ sequenceDiagram
     participant CJ as CityJson / Utf8JsonWriter
 
     C->>OC: GET /cities/nearest?lat=..&lon=..&count=5
-    OC->>OC: compute cache key via GeoCacheKey.Compute<br/>(lat/lon rounded to 3 decimals, ~110 m buckets)
+    OC->>OC: compute cache key via GeoCacheKey.Compute<br/>(validity mask + lat/lon rounded to 3 decimals,<br/>~110 m buckets; invalid input can never share<br/>a key with valid input)
     alt cache hit
         OC-->>C: replay stored response (body + headers,<br/>incl. X-Compute-Count)
     else cache miss
@@ -121,7 +121,7 @@ sequenceDiagram
             DB->>DB: TopK.CopySortedTo -> sorted GeoHit[]
             DB-->>EP: hit count + Span<GeoHit>
             EP->>CJ: WriteCities(response, db, hits)
-            CJ->>CJ: rent pooled Utf8JsonWriter, write to response.BodyWriter
+            CJ->>CJ: rent pooled Utf8JsonWriter, write to response.BodyWriter,<br/>declare Content-Length (BytesCommitted + BytesPending)
             CJ-->>C: application/json body (count, cities[])
             OC->>OC: store response (body + headers) under quantized key, 10 min TTL
         end
