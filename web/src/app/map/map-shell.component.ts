@@ -17,6 +17,10 @@ import {
   buildRulerLine,
   distanceLabelHtml,
 } from './layers';
+import { DragLifecycle, Point } from './drag-lifecycle';
+
+/** How long to wait for the post-mouseup synthetic click before giving up on suppressing it. */
+const CLICK_SUPPRESSION_TIMEOUT_MS = 350;
 
 @Component({
   selector: 'app-map-shell',
@@ -47,8 +51,12 @@ export class MapShellComponent {
 
   private map: L.Map | null = null;
   private layers = L.layerGroup();
-  private dragAnchor: L.LatLng | null = null;
   private dragPreview: L.Circle | null = null;
+  private readonly dragLifecycle = new DragLifecycle(
+    (a, b) => L.latLng(a.lat, a.lng).distanceTo(L.latLng(b.lat, b.lng)) / 1000,
+  );
+  private windowMouseUpHandler: ((e: MouseEvent) => void) | null = null;
+  private suppressClickTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     afterNextRender(() => this.initMap());
@@ -69,7 +77,7 @@ export class MapShellComponent {
     this.layers.addTo(map);
 
     map.on('click', (e) => {
-      if (this.dragAnchor) return; // alt-drag release handled on mouseup
+      if (this.dragLifecycle.consumeClickSuppression()) return; // the alt-drag release already queried
       const { lat, lng } = e.latlng;
       switch (this.store.mode()) {
         case 'nearest':
@@ -84,34 +92,37 @@ export class MapShellComponent {
       }
     });
     map.on('mousedown', (e) => {
-      if (!e.originalEvent.altKey) return;
+      if (!e.originalEvent.altKey || this.dragLifecycle.active) return; // ignore a re-entrant
+      // mousedown while a drag is already active — it would otherwise leak the previous
+      // window-level mouseup listener registered below.
       e.originalEvent.preventDefault();
       map.dragging.disable();
-      this.dragAnchor = e.latlng;
+      this.dragLifecycle.begin({ lat: e.latlng.lat, lng: e.latlng.lng });
       if (this.store.mode() !== 'within') this.store.setMode('within');
+      this.attachDragEndListener(map);
     });
     map.on('mousemove', (e) => {
-      if (!this.dragAnchor) return;
-      const radiusM = this.dragAnchor.distanceTo(e.latlng);
+      const point: Point = { lat: e.latlng.lat, lng: e.latlng.lng };
+      const radiusKm = this.dragLifecycle.move(point);
+      if (radiusKm === null) return;
+      const anchor = this.dragLifecycle.anchor!;
       this.dragPreview?.remove();
-      this.dragPreview = buildRadiusCircle(
-        this.dragAnchor.lat,
-        this.dragAnchor.lng,
-        radiusM / 1000,
-      ).addTo(map);
+      this.dragPreview = buildRadiusCircle(anchor.lat, anchor.lng, radiusKm).addTo(map);
     });
-    map.on('mouseup', (e) => {
-      if (!this.dragAnchor) return;
-      const anchor = this.dragAnchor;
-      const radiusKm = anchor.distanceTo(e.latlng) / 1000;
-      this.dragAnchor = null;
-      this.dragPreview?.remove();
-      this.dragPreview = null;
-      map.dragging.enable();
-      if (radiusKm > 0.05) void this.store.queryWithin(anchor.lat, anchor.lng, radiusKm);
+    // Leaflet's map only listens for mouseup on its own container, so a release outside it
+    // (or the pointer leaving mid-drag) would otherwise leave the gesture wedged — cancel it.
+    map.on('mouseout', () => {
+      if (!this.dragLifecycle.active) return;
+      this.dragLifecycle.cancel();
+      this.endDragVisuals(map);
     });
 
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && this.dragLifecycle.active) {
+        this.dragLifecycle.cancel();
+        this.endDragVisuals(map);
+        return;
+      }
       if (e.key.toLowerCase() === 'd' && !(e.target instanceof HTMLInputElement)) {
         this.store.setMode(this.store.mode() === 'distance' ? 'nearest' : 'distance');
       }
@@ -119,11 +130,69 @@ export class MapShellComponent {
     window.addEventListener('keydown', onKey);
     this.destroyRef.onDestroy(() => {
       window.removeEventListener('keydown', onKey);
+      this.detachDragEndListener();
+      if (this.suppressClickTimer !== null) clearTimeout(this.suppressClickTimer);
       map.remove();
     });
 
     this.map = map;
     this.render();
+  }
+
+  /**
+   * Registers a window-level `mouseup` listener for the duration of one alt-drag. Window-level
+   * (rather than the map's own container-scoped `mouseup`) is what lets us detect a release
+   * outside the map container — Leaflet's map never sees that event at all.
+   */
+  private attachDragEndListener(map: L.Map): void {
+    this.detachDragEndListener(); // idempotent: never register two window listeners at once
+    const handler = (e: MouseEvent) => {
+      if (!this.dragLifecycle.active) {
+        this.detachDragEndListener();
+        return;
+      }
+      const rect = map.getContainer().getBoundingClientRect();
+      const insideContainer =
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom;
+      if (insideContainer) {
+        const latlng = map.mouseEventToLatLng(e);
+        const result = this.dragLifecycle.releaseInside({ lat: latlng.lat, lng: latlng.lng });
+        if (result)
+          void this.store.queryWithin(result.anchor.lat, result.anchor.lng, result.radiusKm);
+        this.scheduleSuppressionExpiry();
+      } else {
+        this.dragLifecycle.cancel();
+      }
+      this.endDragVisuals(map);
+    };
+    this.windowMouseUpHandler = handler;
+    window.addEventListener('mouseup', handler);
+  }
+
+  private detachDragEndListener(): void {
+    if (this.windowMouseUpHandler) {
+      window.removeEventListener('mouseup', this.windowMouseUpHandler);
+      this.windowMouseUpHandler = null;
+    }
+  }
+
+  /** Clears the preview circle and re-enables map panning; used by every drag-ending path. */
+  private endDragVisuals(map: L.Map): void {
+    this.dragPreview?.remove();
+    this.dragPreview = null;
+    map.dragging.enable();
+    this.detachDragEndListener();
+  }
+
+  private scheduleSuppressionExpiry(): void {
+    if (this.suppressClickTimer !== null) clearTimeout(this.suppressClickTimer);
+    this.suppressClickTimer = setTimeout(() => {
+      this.dragLifecycle.expireClickSuppression();
+      this.suppressClickTimer = null;
+    }, CLICK_SUPPRESSION_TIMEOUT_MS);
   }
 
   /** Redraws the single layer group from store state. Reads signals → effect dependency. */

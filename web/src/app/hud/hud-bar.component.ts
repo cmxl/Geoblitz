@@ -14,14 +14,12 @@ import { EngineTimePipe } from '../core/format.pipes';
       } @else if (store.lastTiming(); as t) {
         <span class="stat cyan"
           >engine
-          <b>
-            @if (t.cacheHit) {
-              cached
-            } @else {
-              {{ t.engineMicros | engineTime }}
-            }
-          </b></span
-        >
+          @if (t.cacheHit) {
+            <b [title]="t.engineMicros | engineTime">cached</b>
+          } @else {
+            <b>{{ t.engineMicros | engineTime }}</b>
+          }
+        </span>
         <span class="stat"
           >http <b>{{ t.httpMillis.toFixed(1) }} ms</b></span
         >

@@ -4,6 +4,19 @@ import { CityHit } from '../core/models';
 const CYAN = '#54d7ff';
 const AMBER = '#ffd166';
 
+const HTML_ESCAPES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+/** Escapes HTML-significant characters; GeoNames-sourced names go into Leaflet's `innerHTML` sinks. */
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+}
+
 export function buildQueryPin(lat: number, lon: number): L.CircleMarker {
   return L.circleMarker([lat, lon], {
     radius: 7,
@@ -27,7 +40,9 @@ export function buildResultPin(
     fillColor: AMBER,
     fillOpacity: highlighted ? 0.8 : 0.5,
   });
-  pin.bindTooltip(`${city.name} · ${city.distanceKm.toFixed(3)} km`, { direction: 'top' });
+  pin.bindTooltip(`${escapeHtml(city.name)} · ${city.distanceKm.toFixed(3)} km`, {
+    direction: 'top',
+  });
   if (onHover) {
     pin.on('mouseover', () => onHover(index));
     pin.on('mouseout', () => onHover(null));

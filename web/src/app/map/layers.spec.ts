@@ -34,6 +34,13 @@ describe('layer builders', () => {
     expect(tooltip!.getContent()).toBe('München · 0.612 km');
   });
 
+  it('escapes HTML-significant characters in the city name before it reaches the tooltip innerHTML sink', () => {
+    const malicious = { ...city, name: '<b>x</b>' };
+    const tooltip = buildResultPin(malicious, 0, false).getTooltip();
+    expect(tooltip!.getContent()).toBe('&lt;b&gt;x&lt;/b&gt; · 0.612 km');
+    expect(tooltip!.getContent()).not.toContain('<b>');
+  });
+
   it('radius circle converts km to meters', () => {
     expect(buildRadiusCircle(48, 11, 25).getRadius()).toBe(25000);
   });

@@ -59,16 +59,19 @@ export const GeoQueryStore = signalStore(
     //
     // A dev API restart resets the server-side counter to a small number, which would otherwise
     // satisfy computeCount <= maxComputeCount forever, reporting HIT permanently (MINOR-3). We
-    // treat a computeCount below half of maxComputeCount as "probably a restart, not a cache
-    // hit" and reset maxComputeCount to it.
+    // treat a computeCount at or below half of maxComputeCount as "probably a restart, not a
+    // cache hit" and reset maxComputeCount to it. The boundary (cc === max * 0.5) counts as a
+    // restart, not a HIT — with the opposite convention a restart landing exactly on that
+    // boundary would freeze maxComputeCount and report up to `max - cc` further false HITs
+    // before self-healing.
     //
-    // Trade-off: a legitimately very old cached entry whose computeCount is less than half of
+    // Trade-off: a legitimately very old cached entry whose computeCount is at or below half of
     // the current max is misreported as a restart/MISS instead of a HIT. That's judged safer
     // than reporting HIT forever after a real restart.
     function pushTiming(r: ApiResult<unknown>): void {
       const max = store.maxComputeCount();
       const cc = r.computeCount;
-      const isRestart = cc !== null && cc < max * 0.5;
+      const isRestart = cc !== null && cc <= max * 0.5;
       const isHit = !isRestart && cc !== null && cc <= max && max - cc <= 10_000;
       const timing: RequestTiming = {
         engineMicros: r.engineMicros,
@@ -134,6 +137,9 @@ export const GeoQueryStore = signalStore(
           rulerPoints: [],
           error: null,
           highlightedIndex: null,
+          // The bump above means no in-flight request's `finally` will ever see its seq match
+          // requestSeq again, so busy would otherwise stay stuck true forever (MINOR-1).
+          busy: false,
         });
       },
       setCount(n: number): void {
@@ -173,7 +179,10 @@ export const GeoQueryStore = signalStore(
       async addRulerPoint(lat: number, lon: number): Promise<void> {
         const points = store.rulerPoints();
         if (points.length >= 2) {
-          patchState(store, { rulerPoints: [{ lat, lon }], distanceKm: null });
+          // Restarting the measurement: bump the sequence so an in-flight /distance response
+          // from the just-abandoned pair cannot land and set distanceKm for the new one.
+          requestSeq++;
+          patchState(store, { rulerPoints: [{ lat, lon }], distanceKm: null, busy: false });
           return;
         }
         const next = [...points, { lat, lon }];

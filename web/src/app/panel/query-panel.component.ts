@@ -95,6 +95,12 @@ import { QueryMode } from '../core/models';
     }
   `,
   styles: `
+    :host {
+      /* Let the two cards below participate directly as flex items of .slot-panel (app.ts) so
+         the results card's \`flex: 1\` actually fills remaining height and its list scrolls
+         internally instead of growing past the panel and covering the map's zoom control. */
+      display: contents;
+    }
     .section {
       padding: 14px 16px;
     }

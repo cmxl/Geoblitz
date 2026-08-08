@@ -59,6 +59,8 @@ describe('HudBarComponent', () => {
     const el = render();
     expect(el.textContent).toContain('cached');
     expect(el.textContent).toContain('HIT · #7');
+    const cached = Array.from(el.querySelectorAll('b')).find((b) => b.textContent === 'cached');
+    expect(cached?.getAttribute('title')).toBe('9.1 µs');
   });
 
   it('shows link-down state', async () => {

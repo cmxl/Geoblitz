@@ -38,7 +38,8 @@ import { QueryPanelComponent } from './panel/query-panel.component';
       position: absolute;
       top: 56px;
       left: 14px;
-      bottom: 14px;
+      /* Leave the bottom-left Leaflet zoom control (~64px tall + 10px margin) uncovered. */
+      bottom: 92px;
       width: 296px;
       z-index: 1000;
       display: flex;

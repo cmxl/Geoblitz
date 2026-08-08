@@ -93,6 +93,19 @@ describe('GeoQueryStore', () => {
     expect(store.timings()[0].computeCount).toBe(6);
   });
 
+  it('treats computeCount exactly at half of maxComputeCount as a restart, not a HIT (boundary)', async () => {
+    api.nearest.mockResolvedValueOnce(citiesResult(1, 10));
+    await store.queryNearest(1, 1);
+    expect(store.lastTiming()!.cacheHit).toBe(false);
+    expect(store.maxComputeCount()).toBe(10);
+
+    // cc === max * 0.5 exactly: must count as a restart (MISS), not a false HIT with max frozen.
+    api.nearest.mockResolvedValueOnce(citiesResult(1, 5));
+    await store.queryNearest(2, 2);
+    expect(store.lastTiming()!.cacheHit).toBe(false);
+    expect(store.maxComputeCount()).toBe(5);
+  });
+
   it('treats a large downward jump in computeCount as a server restart, not a HIT', async () => {
     api.nearest.mockResolvedValueOnce(citiesResult(1, 5));
     await store.queryNearest(1, 1);
@@ -179,6 +192,35 @@ describe('GeoQueryStore', () => {
     expect(store.distanceKm()).toBeNull();
   });
 
+  it('ruler: third-click reset bumps the sequence so a stale in-flight /distance cannot land', async () => {
+    let resolveFirst!: (r: ApiResult<{ kilometers: number }>) => void;
+    api.distance.mockImplementationOnce(
+      () => new Promise<ApiResult<{ kilometers: number }>>((res) => (resolveFirst = res)),
+    );
+    store.setMode('distance');
+    await store.addRulerPoint(52.52, 13.405);
+    const inFlight = store.addRulerPoint(48.1374, 11.5755); // second point: fires /distance, unresolved
+    expect(store.rulerPoints().length).toBe(2);
+
+    // Third click restarts the measurement before the first /distance call ever resolves.
+    await store.addRulerPoint(50, 10);
+    expect(store.rulerPoints().length).toBe(1);
+    expect(store.distanceKm()).toBeNull();
+    expect(store.busy()).toBe(false);
+
+    // The stale response now lands — it must be discarded, not overwrite the restarted state.
+    resolveFirst({
+      data: { kilometers: 504.2 },
+      engineMicros: 1,
+      computeCount: 2,
+      httpMillis: 1,
+    });
+    await inFlight;
+    expect(store.distanceKm()).toBeNull();
+    expect(store.rulerPoints().length).toBe(1);
+    expect(store.busy()).toBe(false);
+  });
+
   it('setMode clears transient state', async () => {
     api.nearest.mockResolvedValue(citiesResult(2, 1));
     await store.queryNearest(1, 1);
@@ -248,6 +290,25 @@ describe('GeoQueryStore', () => {
       expect(store.lastTiming()!.computeCount).toBe(20);
       expect(store.timings().length).toBe(1);
       expect(store.busy()).toBe(false);
+    });
+
+    it('clears busy when setMode supersedes an in-flight request that will never settle against the new seq', async () => {
+      let resolveStale!: (r: ApiResult<CitiesResponse>) => void;
+      api.nearest.mockImplementationOnce(
+        () => new Promise<ApiResult<CitiesResponse>>((res) => (resolveStale = res)),
+      );
+
+      const inFlight = store.queryNearest(1, 1);
+      expect(store.busy()).toBe(true);
+
+      store.setMode('within'); // bumps requestSeq; the in-flight request above can never match it again
+      expect(store.busy()).toBe(false);
+
+      // The superseded response finally arrives — must not resurrect busy or apply its results.
+      resolveStale(citiesResult(3, 1));
+      await inFlight;
+      expect(store.busy()).toBe(false);
+      expect(store.results().length).toBe(0);
     });
   });
 });
