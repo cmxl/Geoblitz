@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using HighPerf.Api;
 using HighPerf.Geo;
 using Serilog;
@@ -22,6 +23,11 @@ builder.Services.AddOutputCache(o =>
         .VaryByValue((ctx, _) => ValueTask.FromResult(
             new KeyValuePair<string, string>("geo", GeoCacheKey.Compute(ctx)))));
 });
+builder.Services.AddCors(o => o.AddPolicy("dev", p => p
+    .WithOrigins("http://localhost:4200")
+    .AllowAnyHeader()
+    .AllowAnyMethod()
+    .WithExposedHeaders("X-Compute-Count", "Server-Timing")));
 
 var app = builder.Build();
 
@@ -33,6 +39,9 @@ app.UseExceptionHandler(errApp => errApp.Run(async ctx =>
         new ApiProblem("Internal error", 500, "An unexpected error occurred."),
         AppJsonContext.Default.ApiProblem, contentType: "application/problem+json");
 }));
+
+if (app.Environment.IsDevelopment())
+    app.UseCors("dev");
 
 app.UseOutputCache();
 
@@ -57,8 +66,10 @@ app.MapGet("/distance", (HttpContext ctx, ComputeCounter counter) =>
     if (!QueryParams.TryGetDouble(qs, "toLon", out var toLon) || toLon is not (>= -180 and <= 180))
         return Problems.Validation("toLon must be a number in [-180, 180]");
     ctx.Response.Headers["X-Compute-Count"] = counter.Increment().ToString();
-    return Results.Json(new DistanceResponse(GeoMath.HaversineKm(fromLat, fromLon, toLat, toLon)),
-        AppJsonContext.Default.DistanceResponse);
+    var start = Stopwatch.GetTimestamp();
+    var km = GeoMath.HaversineKm(fromLat, fromLon, toLat, toLon);
+    ServerTiming.Set(ctx, start);
+    return Results.Json(new DistanceResponse(km), AppJsonContext.Default.DistanceResponse);
 }).CacheOutput("Geo");
 
 app.MapGet("/cities/nearest", (HttpContext ctx, GeoDatabase db, ComputeCounter counter) =>
@@ -75,7 +86,9 @@ app.MapGet("/cities/nearest", (HttpContext ctx, GeoDatabase db, ComputeCounter c
 
     ctx.Response.Headers["X-Compute-Count"] = counter.Increment().ToString();
     Span<GeoHit> hits = stackalloc GeoHit[100];
+    var start = Stopwatch.GetTimestamp();
     var n = db.FindNearest(lat, lon, count, hits);
+    ServerTiming.Set(ctx, start);
     CityJson.WriteCities(ctx.Response, db, hits[..n]);
     return ctx.Response.BodyWriter.FlushAsync().AsTask();
 }).CacheOutput("Geo");
@@ -98,7 +111,9 @@ app.MapGet("/cities/within", (HttpContext ctx, GeoDatabase db, ComputeCounter co
     var buffer = System.Buffers.ArrayPool<GeoHit>.Shared.Rent(1000);
     try
     {
+        var start = Stopwatch.GetTimestamp();
         var n = db.FindWithin(lat, lon, radiusKm, minPopulation, buffer.AsSpan(0, 1000));
+        ServerTiming.Set(ctx, start);
         CityJson.WriteCities(ctx.Response, db, buffer.AsSpan(0, n));
     }
     finally
@@ -122,7 +137,9 @@ app.MapGet("/geohash/encode", (HttpContext ctx, ComputeCounter counter) =>
 
     ctx.Response.Headers["X-Compute-Count"] = counter.Increment().ToString();
     Span<char> buffer = stackalloc char[Geohash.MaxPrecision];
+    var start = Stopwatch.GetTimestamp();
     var n = Geohash.Encode(lat, lon, precision, buffer);
+    ServerTiming.Set(ctx, start);
     return Results.Json(new GeohashEncodeResponse(new string(buffer[..n])),
         AppJsonContext.Default.GeohashEncodeResponse);
 }).CacheOutput("Geo");
@@ -130,9 +147,11 @@ app.MapGet("/geohash/encode", (HttpContext ctx, ComputeCounter counter) =>
 app.MapGet("/geohash/decode", (HttpContext ctx, ComputeCounter counter) =>
 {
     var qs = (ctx.Request.QueryString.Value ?? "").AsSpan();
+    var start = Stopwatch.GetTimestamp();
     if (!QueryParams.TryGetRaw(qs, "hash", out var hash)
         || !Geohash.TryDecode(hash, out var lat, out var lon, out var latErr, out var lonErr))
         return Problems.Validation("hash is required and must be a valid geohash (1-12 base32 chars)");
+    ServerTiming.Set(ctx, start);
     ctx.Response.Headers["X-Compute-Count"] = counter.Increment().ToString();
     return Results.Json(new GeohashDecodeResponse(lat, lon, latErr, lonErr),
         AppJsonContext.Default.GeohashDecodeResponse);

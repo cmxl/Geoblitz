@@ -134,14 +134,15 @@ by `tests/HighPerf.Api.Tests/AllocationTests.cs`, which runs on every `dotnet te
 
 | Measurement | Value | Covers |
 |---|---|---|
-| `/cities/nearest` hot path, in-process, exact per-thread count | **200 B / request** | `GeoCacheKey.Compute` + span query parsing + validation + `FindNearest` + `CityJson.WriteCities` + `BodyWriter.FlushAsync` |
+| `/cities/nearest` hot path, in-process, exact per-thread count | **256 B / request** | `GeoCacheKey.Compute` + span query parsing + validation + `FindNearest` + `ServerTiming.Set` + `CityJson.WriteCities` + `BodyWriter.FlushAsync` |
 | `/cities/nearest` end to end via `TestServer` | ~101 KB / request | the above plus routing, output-cache store, TestServer + `HttpClient` |
 | `/cities/within` end to end via `TestServer` | ~110 KB / request | as above, several-hundred-city body |
 | cached replay end to end via `TestServer` | ~16-31 KB / request | output-cache hit, handler not executed |
 
-The 200 B is the load-bearing number and is asserted against a 512 B ceiling: it accounts for the
-two documented per-request strings (the `X-Compute-Count` value and the `GeoCacheKey` string) plus
-header bookkeeping, and **nothing scales with the number of cities or bytes written**. The
+The 256 B is the load-bearing number and is asserted against a 512 B ceiling: it accounts for the
+three documented per-request strings (the `X-Compute-Count` value, the `GeoCacheKey` string, and
+the `Server-Timing` header value) plus header bookkeeping, and **nothing scales with the number of
+cities or bytes written**. The
 TestServer figures are dominated by the test harness (a fresh `HttpContext`, DI scope, two pipes and
 the client's own request/response objects per call); they are kept as a coarse gross-regression
 tripwire and must not be read as Kestrel's per-request cost.

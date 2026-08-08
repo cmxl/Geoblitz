@@ -25,9 +25,9 @@ set three ways, so each factor isolates one decision (BenchmarkDotNet default jo
 | Shipped path: `FindNearest`, k=10 | 1.08 us | 0 B | 6,630x vs. the naive baseline |
 
 At the HTTP layer, the `/cities/nearest` hot path (cache key, query parsing, validation, query,
-JSON write, flush) allocates a measured **200 B per request** — the two documented per-request
-strings and header bookkeeping, with nothing scaling per city or per byte
-(`tests/HighPerf.Api.Tests/AllocationTests.cs`).
+JSON write, flush) allocates a measured **256 B per request** — the three documented per-request
+strings (cache key, `X-Compute-Count`, `Server-Timing`) and header bookkeeping, with nothing
+scaling per city or per byte (`tests/HighPerf.Api.Tests/AllocationTests.cs`).
 
 ## Quickstart
 

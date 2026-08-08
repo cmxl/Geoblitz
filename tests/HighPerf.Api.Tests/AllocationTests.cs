@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Pipelines;
 using HighPerf.Geo;
 using Microsoft.AspNetCore.Http;
@@ -17,7 +18,8 @@ namespace HighPerf.Api.Tests;
 /// runs on one thread with no awaits that suspend, this is an exact, noise-free number: it pins the
 /// per-request managed allocation of <em>our</em> code to the documented handful of small strings
 /// (the <c>X-Compute-Count</c> value, the <c>GeoCacheKey</c> string, the <c>Content-Length</c>
-/// header value) — no per-city, per-hit or per-byte allocation.</para>
+/// header value, the <c>Server-Timing</c> header value) — no per-city, per-hit or per-byte
+/// allocation.</para>
 /// <para><b>What it does not prove.</b> It does not measure Kestrel, routing, output caching or the
 /// HTTP/1.1 framing around the handler. <see cref="Endpoints_ViaTestServer_StayUnderCeiling"/> covers
 /// the end-to-end in-process request instead, but there the TestServer + HttpClient harness
@@ -28,8 +30,9 @@ namespace HighPerf.Api.Tests;
 [Collection("api")]
 public class AllocationTests(ApiFixture fixture, ITestOutputHelper output)
 {
-    /// <summary>Ceiling for the in-process hot path. The measured value is 200 B/request, all of it
-    /// the documented small strings; the ceiling leaves headroom for runtime/JIT variation while
+    /// <summary>Ceiling for the in-process hot path. The measured value is 256 B/request, all of it
+    /// the documented small strings (including the Server-Timing header value added in the web
+    /// flight-deck task); the ceiling leaves headroom for runtime/JIT variation while
     /// still tripping on any per-city or per-byte allocation (a single <c>ctx.Request.Query</c>
     /// materialization or one boxed value per city is far above it).</summary>
     private const long HotPathCeilingBytes = 512;
@@ -126,7 +129,9 @@ public class AllocationTests(ApiFixture fixture, ITestOutputHelper output)
 
         ctx.Response.Headers["X-Compute-Count"] = counter.Increment().ToString(); // documented allocation
         Span<GeoHit> hits = stackalloc GeoHit[100];
+        var start = Stopwatch.GetTimestamp();
         var n = db.FindNearest(lat, lon, count, hits);
+        ServerTiming.Set(ctx, start); // documented allocation: the Server-Timing header value string
         CityJson.WriteCities(ctx.Response, db, hits[..n]);
         return ctx.Response.BodyWriter.FlushAsync().AsTask();
     }
