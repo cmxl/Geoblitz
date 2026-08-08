@@ -4,6 +4,29 @@ import { CityHit } from '../core/models';
 const CYAN = '#54d7ff';
 const AMBER = '#ffd166';
 
+/**
+ * Visual states for a result pin, exported so both the builder (initial paint) and the
+ * hover-restyle path (map-shell.component.ts) read the exact same values — keeps them from
+ * drifting apart the way two independently-maintained style literals eventually would.
+ * `radius` is included: `CircleMarker.setStyle` picks up `options.radius` and calls
+ * `setRadius` internally, so a plain `setStyle(RESULT_PIN_STYLE_HOT)` resizes the pin too.
+ */
+export const RESULT_PIN_STYLE: L.PathOptions & { radius: number } = {
+  radius: 5,
+  color: AMBER,
+  weight: 1.5,
+  fillColor: AMBER,
+  fillOpacity: 0.5,
+};
+
+export const RESULT_PIN_STYLE_HOT: L.PathOptions & { radius: number } = {
+  radius: 8,
+  color: AMBER,
+  weight: 3,
+  fillColor: AMBER,
+  fillOpacity: 0.8,
+};
+
 const HTML_ESCAPES: Record<string, string> = {
   '&': '&amp;',
   '<': '&lt;',
@@ -33,13 +56,10 @@ export function buildResultPin(
   highlighted: boolean,
   onHover?: (index: number | null) => void,
 ): L.CircleMarker {
-  const pin = L.circleMarker([city.lat, city.lon], {
-    radius: highlighted ? 8 : 5,
-    color: AMBER,
-    weight: highlighted ? 3 : 1.5,
-    fillColor: AMBER,
-    fillOpacity: highlighted ? 0.8 : 0.5,
-  });
+  const pin = L.circleMarker(
+    [city.lat, city.lon],
+    highlighted ? RESULT_PIN_STYLE_HOT : RESULT_PIN_STYLE,
+  );
   pin.bindTooltip(`${escapeHtml(city.name)} · ${city.distanceKm.toFixed(3)} km`, {
     direction: 'top',
   });

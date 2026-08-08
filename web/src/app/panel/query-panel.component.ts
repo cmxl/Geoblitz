@@ -209,6 +209,13 @@ import { QueryMode } from '../core/models';
       border-bottom: 1px solid rgba(94, 200, 255, 0.08);
       font-size: 13.5px;
       cursor: default;
+      /* Row height is 8px + 8px padding + ~21px line box (13.5px font, browser default
+         line-height ~1.55) ≈ 37px. With up to 1000 rows in .list, content-visibility: auto
+         lets the browser skip layout/paint/style work entirely for rows scrolled out of view;
+         contain-intrinsic-size gives it a placeholder size so scrollbar height stays correct
+         before an offscreen row has ever been measured. */
+      content-visibility: auto;
+      contain-intrinsic-size: auto 37px;
     }
     .row.hot {
       background: rgba(84, 215, 255, 0.08);

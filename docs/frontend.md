@@ -190,6 +190,46 @@ touching the API's production behavior:
    validation failure never gets the header either, since it returns before the compute
    call runs.
 
+## Rendering performance
+
+Four small, targeted changes make the map stay smooth with up to 1000 result pins
+(`within` mode, radius 500 km near a dense area):
+
+- **Canvas renderer** (`map-shell.component.ts`, `L.canvas()` passed as the map's
+  `renderer`). All pins, the radius circle, and the ruler line draw into a single
+  `<canvas>` element instead of one SVG `<path>` node per pin — verified live: the
+  overlay pane holds exactly 1 `<canvas>` and 0 `<path>` elements with 1000 results
+  loaded. Leaflet 1.9's canvas renderer implements its own hit testing, so
+  `bindTooltip` and the pin `mouseover`/`mouseout` handlers work unchanged.
+- **Rebuild-free hover highlight** (`map-shell.component.ts`, `layers.ts`). Previously
+  a single `effect()` read every store signal, including `highlightedIndex`, so
+  hovering one pin or panel row cleared and rebuilt all 1000 markers. It is now split
+  into two effects: `render()` reads `queryPoint`/`results`/`mode`/`radiusKm`/
+  `rulerPoints`/`distanceKm` and rebuilds the layer group — it never reads
+  `highlightedIndex`, so hovering does not trigger it. `applyHighlight()` reads
+  *only* `highlightedIndex` and calls `setStyle` on just the previously- and
+  newly-highlighted `CircleMarker`s (Leaflet's `CircleMarker.setStyle` also applies
+  `options.radius` via `setRadius`, so one call resizes and recolors). Both paths pull
+  from the same exported `RESULT_PIN_STYLE`/`RESULT_PIN_STYLE_HOT` consts in
+  `layers.ts` so the builder and the restyler cannot drift apart.
+- **Offscreen row skipping** (`query-panel.component.ts`, `.row`):
+  `content-visibility: auto` plus `contain-intrinsic-size: auto 37px` (measured row
+  height: 8px + 8px padding + a ~21px line box) lets the browser skip layout and paint
+  entirely for result rows scrolled out of view, of which there can be up to 1000.
+- **Tile buffer** (`map-shell.component.ts`, tile layer `keepBuffer: 4`, default 2):
+  keeps a wider ring of tiles loaded past the viewport edge so panning doesn't churn
+  tile requests at the edges.
+
+Measured on one dev machine (`dotnet run -c Release`, `ng serve`, Chromium via
+Playwright, headless): rapidly toggling `mouseenter`/`mouseleave` across 20 panel rows
+(40 highlight transitions) with 1000 results loaded, flushing Angular's effect
+scheduler between each event —before the highlight split (single rebuild-everything
+effect, temporarily reverted via `git stash`/`checkout` for this comparison): **~3403 ms**
+average (5 runs) for the 40 transitions; **after** (split effects, `setStyle`-only
+restyle): **~439 ms** average (5 runs) — roughly **7.8× faster** under this harness.
+Both numbers share the same measurement overhead (event dispatch + effect-flush
+waiting), so treat the ratio, not the absolute milliseconds, as the meaningful number.
+
 ## Testing
 
 Vitest covers everything with meaningful logic; nothing else is claimed as tested:

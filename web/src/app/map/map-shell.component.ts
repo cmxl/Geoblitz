@@ -16,6 +16,8 @@ import {
   buildRadiusCircle,
   buildRulerLine,
   distanceLabelHtml,
+  RESULT_PIN_STYLE,
+  RESULT_PIN_STYLE_HOT,
 } from './layers';
 import { DragLifecycle, Point } from './drag-lifecycle';
 
@@ -52,6 +54,11 @@ export class MapShellComponent {
   private map: L.Map | null = null;
   private layers = L.layerGroup();
   private dragPreview: L.Circle | null = null;
+  /** Result pins from the last rebuild, indexed exactly like `store.results()` — lets the
+   *  highlight effect below restyle one marker directly instead of rebuilding all of them. */
+  private resultPins: L.CircleMarker[] = [];
+  /** Previously-highlighted index, so the highlight effect can un-style it on change. */
+  private lastHighlighted: number | null = null;
   private readonly dragLifecycle = new DragLifecycle(
     (a, b) => L.latLng(a.lat, a.lng).distanceTo(L.latLng(b.lat, b.lng)) / 1000,
   );
@@ -60,16 +67,28 @@ export class MapShellComponent {
 
   constructor() {
     afterNextRender(() => this.initMap());
-    effect(() => this.render()); // re-runs on any store signal read inside render()
+    // Rebuild effect: reads queryPoint/results/mode/radiusKm/rulerPoints/distanceKm — it
+    // deliberately never reads highlightedIndex, so hovering a pin/row does NOT trigger it.
+    effect(() => this.render());
+    // Highlight effect: reads ONLY highlightedIndex, so it re-runs on hover and nothing else.
+    // It restyles at most two existing markers instead of clearing + rebuilding every layer.
+    effect(() => this.applyHighlight());
   }
 
   private initMap(): void {
     const map = L.map(this.host().nativeElement, {
       zoomControl: false,
       attributionControl: true,
+      // Shared canvas renderer: up to ~1000 result pins draw into one <canvas> element
+      // instead of one SVG <path> node each. Tooltips and mouseover/mouseout hit detection
+      // still work — Leaflet 1.9's canvas renderer implements its own hit testing.
+      renderer: L.canvas(),
     }).setView([48.1374, 11.5755], 6);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
+      // Keep an extra ring of tiles loaded past the viewport edge (default 2) so panning
+      // doesn't churn tile requests right as the map catches up to the cursor.
+      keepBuffer: 4,
       attribution:
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(map);
@@ -205,11 +224,15 @@ export class MapShellComponent {
     }, CLICK_SUPPRESSION_TIMEOUT_MS);
   }
 
-  /** Redraws the single layer group from store state. Reads signals → effect dependency. */
+  /**
+   * Redraws the single layer group from store state. Reads every store signal EXCEPT
+   * `highlightedIndex` — that one is owned exclusively by `applyHighlight()` below, so this
+   * effect does not re-run on hover. Result pins are always built unhighlighted; the
+   * highlight effect restyles the right one in place right after (initial paint included).
+   */
   private render(): void {
     const queryPoint = this.store.queryPoint();
     const results = this.store.results();
-    const highlighted = this.store.highlightedIndex();
     const mode = this.store.mode();
     const radiusKm = this.store.radiusKm();
     const rulerPoints = this.store.rulerPoints();
@@ -222,11 +245,11 @@ export class MapShellComponent {
       if (mode === 'within')
         this.layers.addLayer(buildRadiusCircle(queryPoint.lat, queryPoint.lon, radiusKm));
     }
-    results.forEach((city, i) =>
-      this.layers.addLayer(
-        buildResultPin(city, i, highlighted === i, (idx) => this.store.highlight(idx)),
-      ),
-    );
+    this.resultPins = results.map((city, i) => {
+      const pin = buildResultPin(city, i, false, (idx) => this.store.highlight(idx));
+      this.layers.addLayer(pin);
+      return pin;
+    });
     if (mode === 'distance' && rulerPoints.length > 0) {
       rulerPoints.forEach((p) => this.layers.addLayer(buildQueryPin(p.lat, p.lon)));
       if (rulerPoints.length === 2) {
@@ -249,5 +272,20 @@ export class MapShellComponent {
         }
       }
     }
+  }
+
+  /**
+   * Restyles just the previously- and newly-highlighted result pins via `setStyle`, using
+   * the same `RESULT_PIN_STYLE`/`RESULT_PIN_STYLE_HOT` consts `buildResultPin` paints with
+   * initially — no rebuild, no layer churn, so hovering 1000 pins/rows stays O(1) per hover
+   * instead of O(n). Reads ONLY `highlightedIndex`, so it does not re-run when `render()`'s
+   * signals change (and vice versa).
+   */
+  private applyHighlight(): void {
+    const highlighted = this.store.highlightedIndex();
+    const previous = this.lastHighlighted;
+    this.lastHighlighted = highlighted;
+    if (previous !== null) this.resultPins[previous]?.setStyle(RESULT_PIN_STYLE);
+    if (highlighted !== null) this.resultPins[highlighted]?.setStyle(RESULT_PIN_STYLE_HOT);
   }
 }

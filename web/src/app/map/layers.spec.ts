@@ -5,6 +5,8 @@ import {
   buildRadiusCircle,
   buildRulerLine,
   distanceLabelHtml,
+  RESULT_PIN_STYLE,
+  RESULT_PIN_STYLE_HOT,
 } from './layers';
 
 const city = {
@@ -27,6 +29,16 @@ describe('layer builders', () => {
     expect(buildResultPin(city, 0, false).options.radius).toBe(5);
     expect(buildResultPin(city, 0, true).options.radius).toBe(8);
     expect(buildResultPin(city, 0, false).options.color).toBe('#ffd166');
+  });
+
+  it('exports the cold/hot style consts so the builder and the hover-restyle path share one source of truth', () => {
+    expect(RESULT_PIN_STYLE).toMatchObject({ radius: 5, weight: 1.5, fillOpacity: 0.5 });
+    expect(RESULT_PIN_STYLE_HOT).toMatchObject({ radius: 8, weight: 3, fillOpacity: 0.8 });
+  });
+
+  it('buildResultPin picks its options straight from the exported style consts (no drift)', () => {
+    expect(buildResultPin(city, 0, false).options).toMatchObject(RESULT_PIN_STYLE);
+    expect(buildResultPin(city, 0, true).options).toMatchObject(RESULT_PIN_STYLE_HOT);
   });
 
   it('result pin tooltip carries name and distance', () => {
