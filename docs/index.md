@@ -21,6 +21,8 @@ Read the docs in this order if you're new to the project:
    requests/responses, error shape, and caching semantics.
 4. **[Benchmarks](benchmarks.md)** — how to run the BenchmarkDotNet suite and the k6 load
    tests, how to read `MemoryDiagnoser` output, and the latest measured results.
+5. **[Frontend — Flight Deck web console](frontend.md)** — the Angular map console for the
+   API: architecture, HUD honesty rules, gestures, and what's deliberately untested.
 
 ## Project history
 
@@ -40,7 +42,9 @@ explained where they matter:
 - [`README.md`](../README.md) — project pitch and quickstart.
 - `src/HighPerf.Geo` — the geo index and math library.
 - `src/HighPerf.Api` — the minimal-API host.
-- `tests/` — 160 xUnit tests across both projects (79 geo, 81 API).
+- `tests/` — xUnit tests across both projects.
 - `benchmarks/` — BenchmarkDotNet suite and [`RESULTS.md`](../benchmarks/RESULTS.md).
 - `loadtest/` — k6 scripts.
 - `tools/prepare-dataset.ps1` — regenerates the embedded dataset.
+- `web/` — the Angular "Flight Deck" map console for the API — see
+  [frontend.md](frontend.md).
