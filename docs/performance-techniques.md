@@ -143,8 +143,8 @@ regardless of hit/miss on the output cache.
 **Measured**: `tests/HighPerf.Api.Tests/AllocationTests.cs` replays the `/cities/nearest`
 handler's exact synchronous sequence — `GeoCacheKey.Compute` + these span parses + validation
 + `FindNearest` + `CityJson.WriteCities` + `BodyWriter.FlushAsync` — against a real
-`HttpResponse` on one thread and measures **160 B per request** with
-`GC.GetAllocatedBytesForCurrentThread()`, asserted against a 512 B ceiling. That 160 B is the
+`HttpResponse` on one thread and measures **200 B per request** with
+`GC.GetAllocatedBytesForCurrentThread()`, asserted against a 512 B ceiling. That 200 B is the
 two documented strings (the `X-Compute-Count` value, the cache-key string) plus header
 bookkeeping: nothing scales with the number of parameters, cities or response bytes. Reaching
 for `HttpRequest.Query` instead would materialize a `Dictionary<string, StringValues>` per
@@ -193,7 +193,7 @@ flushed to the socket — so this guarantee is a property of small responses, no
 (`PooledJson`, `CityJson.WriteCities`).
 
 **Measured**: contributes to the zero-allocation results in `benchmarks/RESULTS.md` for the
-grid-query benchmarks and to the 160 B/request hot path of technique 6.
+grid-query benchmarks and to the 200 B/request hot path of technique 6.
 `tests/HighPerf.Api.Tests/ResponseFramingTests.cs` asserts the declared `Content-Length`
 equals the exact body size for both a small body and one spanning several writer buffers. The
 absence of chunked framing itself is not automatable in-process (TestServer has no HTTP/1.1
@@ -268,7 +268,7 @@ the validity dimension: for every invalid parameter shape it issues the *valid* 
 (a 400 must not poison the valid variant) and that equivalent spellings still share one entry.
 
 **Cost**: one string per request, no boxing — the key is composed in a stack buffer with
-`TryFormat`, and the only allocation is the final `string`. Included in the 160 B/request
+`TryFormat`, and the only allocation is the final `string`. Included in the 200 B/request
 figure of technique 6.
 
 ## 9. Host tuning

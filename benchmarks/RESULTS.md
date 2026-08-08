@@ -113,12 +113,12 @@ endpoints themselves is measured by `HighPerf.Api.Tests/AllocationTests.cs`:
 
 | Measurement | Value | What it covers |
 |---|---|---|
-| `/cities/nearest` hot path, in-process | **160 B / request** | cache-key composition + span query parsing + validation + `FindNearest` + `CityJson.WriteCities` + `BodyWriter.FlushAsync`, on one thread, exact per-thread counting |
+| `/cities/nearest` hot path, in-process | **200 B / request** | cache-key composition + span query parsing + validation + `FindNearest` + `CityJson.WriteCities` + `BodyWriter.FlushAsync`, on one thread, exact per-thread counting |
 | `/cities/nearest` end to end (TestServer) | ~101 KB / request | the above plus routing, output-cache store, TestServer and `HttpClient` — harness-dominated |
 | `/cities/within` end to end (TestServer) | ~110 KB / request | as above, with a several-hundred-city body |
 | cached replay, end to end (TestServer) | ~16-31 KB / request | output-cache hit, no handler execution |
 
-The 160 B figure is the meaningful one: it is the two documented per-request strings (the
+The 200 B figure is the meaningful one: it is the two documented per-request strings (the
 `X-Compute-Count` header value and the `GeoCacheKey` string) plus header bookkeeping, with **nothing
 proportional to the number of cities or bytes written**. The TestServer figures are a coarse
 gross-regression tripwire, not a statement about Kestrel's per-request cost.

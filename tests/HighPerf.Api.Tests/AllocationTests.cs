@@ -28,7 +28,7 @@ namespace HighPerf.Api.Tests;
 [Collection("api")]
 public class AllocationTests(ApiFixture fixture, ITestOutputHelper output)
 {
-    /// <summary>Ceiling for the in-process hot path. The measured value is 160 B/request, all of it
+    /// <summary>Ceiling for the in-process hot path. The measured value is 200 B/request, all of it
     /// the documented small strings; the ceiling leaves headroom for runtime/JIT variation while
     /// still tripping on any per-city or per-byte allocation (a single <c>ctx.Request.Query</c>
     /// materialization or one boxed value per city is far above it).</summary>
