@@ -5,9 +5,9 @@
 ## Solution layout
 
 ```
-HighPerformance.slnx
+Geoblitz.slnx
 ├── src/
-│   ├── HighPerf.Geo/        # geo index + math library, no ASP.NET Core dependency
+│   ├── Geoblitz.Geo/        # geo index + math library, no ASP.NET Core dependency
 │   │   ├── GeoDatabase.cs   # struct-of-arrays city store, grid build, FindWithin/FindNearest
 │   │   ├── GeoMath.cs       # Haversine, unit-vector conversion, chord<->km
 │   │   ├── ChordKernel.cs   # Vector<float> SIMD distance scans
@@ -17,7 +17,7 @@ HighPerformance.slnx
 │   │   ├── CityTableParser.cs / ParsedCities.cs  # gzip TSV -> parallel arrays
 │   │   ├── GeoHit.cs        # (Index, DistanceKm) result record struct
 │   │   └── Resources/cities.tsv.gz  # embedded GeoNames cities1000 extract (170,584 rows)
-│   └── HighPerf.Api/        # minimal-API host
+│   └── Geoblitz.Api/        # minimal-API host
 │       ├── Program.cs       # host setup, output-cache policy, 6 endpoint definitions
 │       ├── QueryParams.cs   # span-based query-string parsing
 │       ├── GeoCacheKey.cs   # validity-aware, quantized cache-key computation for OutputCache
@@ -25,15 +25,15 @@ HighPerformance.slnx
 │       ├── CityJson.cs      # pooled Utf8JsonWriter -> PipeWriter city serialization
 │       └── ApiTypes.cs      # response/problem records + source-generated JsonSerializerContext
 ├── tests/
-│   ├── HighPerf.Geo.Tests/
-│   └── HighPerf.Api.Tests/  # WebApplicationFactory-based endpoint tests
-├── benchmarks/HighPerf.Benchmarks/   # BenchmarkDotNet suite (see benchmarks/RESULTS.md)
+│   ├── Geoblitz.Geo.Tests/
+│   └── Geoblitz.Api.Tests/  # WebApplicationFactory-based endpoint tests
+├── benchmarks/Geoblitz.Benchmarks/   # BenchmarkDotNet suite (see benchmarks/RESULTS.md)
 ├── loadtest/                # k6 scripts
 └── tools/prepare-dataset.ps1
 ```
 
-`HighPerf.Geo` has no dependency on ASP.NET Core — it is a plain library that could be
-reused by a CLI or a different host. `HighPerf.Api` references it and adds the HTTP layer.
+`Geoblitz.Geo` has no dependency on ASP.NET Core — it is a plain library that could be
+reused by a CLI or a different host. `Geoblitz.Api` references it and adds the HTTP layer.
 
 ## Startup flow
 
@@ -53,7 +53,7 @@ flowchart LR
 
 Each stage avoids allocating more than it must: the TSV is parsed directly from the
 decompressed byte span (no per-line string splitting), and the final permutation writes
-each column once into its final grid-cell-ordered position (`src/HighPerf.Geo/GeoDatabase.cs`,
+each column once into its final grid-cell-ordered position (`src/Geoblitz.Geo/GeoDatabase.cs`,
 private constructor).
 
 ## Component diagram
@@ -61,13 +61,13 @@ private constructor).
 ```mermaid
 graph TD
     Client(["HTTP client"])
-    subgraph API["HighPerf.Api"]
+    subgraph API["Geoblitz.Api"]
         OC["OutputCache middleware<br/>(policy: Geo, 10 min TTL,<br/>VaryByValue = GeoCacheKey.Compute)"]
         EP["Minimal API endpoints<br/>/healthz /distance<br/>/cities/nearest /cities/within<br/>/geohash/encode /geohash/decode"]
         QP["QueryParams<br/>(span-based parsing)"]
         CJ["CityJson<br/>(pooled Utf8JsonWriter -> PipeWriter)"]
     end
-    subgraph GEO["HighPerf.Geo"]
+    subgraph GEO["Geoblitz.Geo"]
         GD["GeoDatabase<br/>(struct-of-arrays, CSR grid)"]
         CK["ChordKernel<br/>(Vector&lt;float&gt; SIMD scan)"]
         TK["TopK bounded selection<br/>(stackalloc / ArrayPool)"]
@@ -136,7 +136,7 @@ permanent HUD. It has no server-side component of its own and does not change th
 request-handling path for any other client. Two hosting modes:
 
 - **Single-origin (showcase mode)**: `tools/publish-web.ps1` builds the Angular production
-  bundle and mirrors it into `src/HighPerf.Api/wwwroot`; `Program.cs` then serves it
+  bundle and mirrors it into `src/Geoblitz.Api/wwwroot`; `Program.cs` then serves it
   alongside the API from one process, one port (5235), via `UseDefaultFiles`/
   `UseStaticFiles`. Same origin, no CORS.
 - **Two-terminal dev mode**: the console runs as its own process (`ng serve`, port 4200)

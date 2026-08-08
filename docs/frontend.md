@@ -4,7 +4,7 @@
 
 ## What it is
 
-Flight Deck is an Angular map console for the HighPerf geo API. It is a local
+Flight Deck is an Angular map console for the Geoblitz geo API. It is a local
 developer/demo tool, not a deployed product: click a point on a real OpenStreetMap map and
 watch the API's three query modes — nearest, within-radius, and great-circle distance —
 resolve live, with the API's microsecond-scale compute time surfaced as a permanent,
@@ -21,12 +21,12 @@ glass panels with a monospace type for all data values. See
 
 One process, one terminal. `tools/publish-web.ps1` builds the Angular production bundle
 (running `npm ci` first if `web/node_modules` is missing) and mirrors
-`web/dist/highperf-web/browser/*` into `src/HighPerf.Api/wwwroot`, which the API then serves
+`web/dist/geoblitz-web/browser/*` into `src/Geoblitz.Api/wwwroot`, which the API then serves
 alongside its own endpoints — see "API additions" below.
 
 ```powershell
 pwsh tools/publish-web.ps1
-dotnet run -c Release --project src/HighPerf.Api
+dotnet run -c Release --project src/Geoblitz.Api
 ```
 
 Open `http://localhost:5235` — the console and the API are the same origin, so every
@@ -42,8 +42,8 @@ For active development on the console, with live reload:
 
 ```bash
 # Terminal A — API (from the repo root)
-dotnet run -c Release --project src/HighPerf.Api
-# listens on http://localhost:5235 (see src/HighPerf.Api/Properties/launchSettings.json)
+dotnet run -c Release --project src/Geoblitz.Api
+# listens on http://localhost:5235 (see src/Geoblitz.Api/Properties/launchSettings.json)
 
 # Terminal B — web app (first run: npm ci)
 cd web
@@ -82,7 +82,7 @@ graph TD
         STORE["GeoQueryStore<br/>core/geo-query.store.ts<br/>SignalStore — single source of truth"]
         API["GeoApiService<br/>core/geo-api.service.ts<br/>typed fetch wrapper + header parsing"]
     end
-    BACKEND[["HighPerf.Api<br/>http://localhost:5235<br/>(dev CORS + Server-Timing)"]]
+    BACKEND[["Geoblitz.Api<br/>http://localhost:5235<br/>(dev CORS + Server-Timing)"]]
 
     APP --> MAP
     APP --> HUD
@@ -184,7 +184,7 @@ would reject with a 400 (`geo-query.store.ts`, `setCount`/`setRadiusKm`/`setMinP
 
 ## API additions
 
-Three additions to `src/HighPerf.Api`, scoped tightly to serve this console without
+Three additions to `src/Geoblitz.Api`, scoped tightly to serve this console without
 touching the API's production behavior:
 
 1. **CORS — Development only.** `Program.cs` registers a named `"dev"` CORS policy
@@ -193,11 +193,11 @@ touching the API's production behavior:
    read those headers cross-origin). It is applied with
    `if (app.Environment.IsDevelopment()) app.UseCors("dev");` — there is no CORS policy at
    all outside Development, so the production deployment story is unchanged. Covered by
-   `tests/HighPerf.Api.Tests/CorsTests.cs`: preflight from the dev origin succeeds and
+   `tests/Geoblitz.Api.Tests/CorsTests.cs`: preflight from the dev origin succeeds and
    echoes it back, a simple GET from the dev origin exposes both custom headers, a foreign
    origin gets no CORS headers, and — using a locally pinned `Production` environment
    `WebApplicationFactory` — the dev origin gets no CORS headers outside Development either.
-2. **`Server-Timing` header.** `src/HighPerf.Api/ServerTiming.cs` exposes a single
+2. **`Server-Timing` header.** `src/Geoblitz.Api/ServerTiming.cs` exposes a single
    `ServerTiming.Set(HttpContext, long startTimestamp)` that writes
    `Server-Timing: engine;dur=<ms with 3 decimals>`, computed from
    `Stopwatch.GetElapsedTime(startTimestamp)`. Every one of the five geo endpoints in
@@ -205,7 +205,7 @@ touching the API's production behavior:
    body, so it measures the compute section only (not JSON serialization, not the
    `X-Compute-Count` bookkeeping) and — because it is set before the body write —
    `OutputCache` captures and replays it byte-for-byte on a cache hit. Covered by
-   `tests/HighPerf.Api.Tests/ServerTimingTests.cs`: the header is present with a
+   `tests/Geoblitz.Api.Tests/ServerTimingTests.cs`: the header is present with a
    plausible, correctly formatted value on all five geo endpoints; a cache hit replays the
    exact same header value (and the same `X-Compute-Count`, proving it's a genuine replay,
    not a fresh compute); `/healthz` (uncached, no compute) never gets the header; a 400
@@ -222,7 +222,7 @@ touching the API's production behavior:
    its URL changing) and `Cache-Control: public,max-age=31536000,immutable` on everything
    else (Angular's content-hashed filenames make every other asset safe to cache forever).
    No response compression was added here — deliberate, to keep the JSON hot path
-   untouched. Covered by `tests/HighPerf.Api.Tests/StaticHostingTests.cs`: `/` serves
+   untouched. Covered by `tests/Geoblitz.Api.Tests/StaticHostingTests.cs`: `/` serves
    `index.html` with `no-cache`, a hashed asset gets the immutable long-lived header, the
    geo endpoints keep working with static hosting enabled, and a `WebApplicationFactory`
    pointed at a nonexistent web root still 404s on `/` (the guard actually skips the

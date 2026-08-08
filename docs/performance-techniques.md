@@ -20,7 +20,7 @@ every array.
 of contiguous slices (one per candidate grid cell) instead of dereferencing scattered
 objects, and each slice is directly SIMD-scannable.
 
-**Where**: `src/HighPerf.Geo/GeoDatabase.cs`, private constructor — the counting-sort
+**Where**: `src/Geoblitz.Geo/GeoDatabase.cs`, private constructor — the counting-sort
 (`cellOf`, `counts`, `CellStart`) and permutation (`order[]`, the `for (var d = 0; d < Count; d++)` copy loop).
 
 **Measured**: this layout is what makes the grid-narrowed scan possible; `Grid_FindWithin100km`
@@ -44,7 +44,7 @@ longitude-difference cosine at scan time. Full unit vectors fold both lat and lo
 single 3-way subtract-square-add, which vectorizes cleanly (technique 3) and needs no
 per-candidate trig at all.
 
-**Where**: `src/HighPerf.Geo/GeoMath.cs` (`ToUnitVector`, `KmToChordSq`, `ChordSqToKm`);
+**Where**: `src/Geoblitz.Geo/GeoMath.cs` (`ToUnitVector`, `KmToChordSq`, `ChordSqToKm`);
 vectors built once in `GeoDatabase`'s constructor and consumed by `ChordKernel`.
 
 **Measured — 18.0x, the single largest factor in the suite**: `Scalar_ChordFullScan`
@@ -66,7 +66,7 @@ at the end of a range.
 without requiring cell sizes to be padded to a vector-width multiple; the scalar tail keeps
 results correct for arbitrarily-sized grid-cell ranges.
 
-**Where**: `src/HighPerf.Geo/ChordKernel.cs` — `ScanNearest`, `ScanWithinTopK` (used by the
+**Where**: `src/Geoblitz.Geo/ChordKernel.cs` — `ScanNearest`, `ScanWithinTopK` (used by the
 query path) and `ScanWithin` (the unbounded collect-everything variant, now only exercised by
 tests and the full-scan benchmark).
 
@@ -89,7 +89,7 @@ whole-row shortcut when the longitude window would otherwise exceed 360°.
 over all 170,584 cities; the SIMD kernel (technique 3) then only has to touch what's
 actually in range.
 
-**Where**: `src/HighPerf.Geo/GeoDatabase.cs`, `CellStart` field and `GetCandidateRanges` method.
+**Where**: `src/Geoblitz.Geo/GeoDatabase.cs`, `CellStart` field and `GetCandidateRanges` method.
 
 **Measured**: `Grid_FindWithin100km` (9.09 us) beats a full `Simd_ChordFullScan` of all
 cities (47.0 us) by ~5.2x — grid pruning cuts how much data the SIMD kernel has to touch.
@@ -113,8 +113,8 @@ sorting all of it. The `minPopulation` filter is applied inside the scan, *befor
 so the retained set is "the k closest cities that pass the filter" — identical semantics to
 filtering a fully sorted match list and truncating it.
 
-**Where**: `src/HighPerf.Geo/TopK.cs`; `ChordKernel.ScanWithinTopK`/`ScanNearest`; used from
-`GeoDatabase.FindWithin` and `GeoDatabase.FindNearest`. `src/HighPerf.Geo/HitBuffer.cs` (the
+**Where**: `src/Geoblitz.Geo/TopK.cs`; `ChordKernel.ScanWithinTopK`/`ScanNearest`; used from
+`GeoDatabase.FindWithin` and `GeoDatabase.FindNearest`. `src/Geoblitz.Geo/HitBuffer.cs` (the
 older growable collect-everything buffer) survives only for `ChordKernel.ScanWithin`, which is
 now exercised by tests and the full-scan benchmarks rather than by the query path.
 
@@ -137,10 +137,10 @@ plus per-value string/array allocations).
 off the span avoids allocating a `StringValues` collection on every single request,
 regardless of hit/miss on the output cache.
 
-**Where**: `src/HighPerf.Api/QueryParams.cs`; called from every endpoint in
-`src/HighPerf.Api/Program.cs` (e.g. `QueryParams.TryGetDouble(qs, "lat", out var lat)`).
+**Where**: `src/Geoblitz.Api/QueryParams.cs`; called from every endpoint in
+`src/Geoblitz.Api/Program.cs` (e.g. `QueryParams.TryGetDouble(qs, "lat", out var lat)`).
 
-**Measured**: `tests/HighPerf.Api.Tests/AllocationTests.cs` replays the `/cities/nearest`
+**Measured**: `tests/Geoblitz.Api.Tests/AllocationTests.cs` replays the `/cities/nearest`
 handler's exact synchronous sequence — `GeoCacheKey.Compute` + these span parses + validation
 + `FindNearest` + `ServerTiming.Set` + `CityJson.WriteCities` + `BodyWriter.FlushAsync` — against
 a real `HttpResponse` on one thread and measures **256 B per request** with
@@ -150,7 +150,7 @@ header value) plus header bookkeeping: nothing scales with the number of paramet
 response bytes. Reaching
 for `HttpRequest.Query` instead would materialize a `Dictionary<string, StringValues>` per
 request and trip that ceiling. Also exercised end-to-end by the k6 scripts in `loadtest/`
-(see [benchmarks.md](benchmarks.md)) and by the endpoint tests in `tests/HighPerf.Api.Tests`.
+(see [benchmarks.md](benchmarks.md)) and by the endpoint tests in `tests/Geoblitz.Api.Tests`.
 
 ## 7. Source-generated JSON + pooled `Utf8JsonWriter` → `PipeWriter`
 
@@ -190,12 +190,12 @@ and `UseExceptionHandler` can still emit a clean 500 `application/problem+json`.
 large enough to have already grown its buffer, part of it is committed to the pipe — but not
 flushed to the socket — so this guarantee is a property of small responses, not of all of them.)
 
-**Where**: `src/HighPerf.Api/ApiTypes.cs` (`AppJsonContext`); `src/HighPerf.Api/CityJson.cs`
+**Where**: `src/Geoblitz.Api/ApiTypes.cs` (`AppJsonContext`); `src/Geoblitz.Api/CityJson.cs`
 (`PooledJson`, `CityJson.WriteCities`).
 
 **Measured**: contributes to the zero-allocation results in `benchmarks/RESULTS.md` for the
 grid-query benchmarks and to the 256 B/request hot path of technique 6.
-`tests/HighPerf.Api.Tests/ResponseFramingTests.cs` asserts the declared `Content-Length`
+`tests/Geoblitz.Api.Tests/ResponseFramingTests.cs` asserts the declared `Content-Length`
 equals the exact body size for both a small body and one spanning several writer buffers. The
 absence of chunked framing itself is not automatable in-process (TestServer has no HTTP/1.1
 framing layer and reports a buffered length to the client regardless), so it was verified by hand
@@ -254,16 +254,16 @@ miss (the handler doesn't run on a hit), so it can't reflect the real cache stat
 stored header untouched, two requests mapping to the same quantized key return the *same*
 `X-Compute-Count` value — proving a cache hit — while a genuinely new computation always
 returns a strictly higher one. Tests assert exactly this in
-`tests/HighPerf.Api.Tests/CachingTests.cs`.
+`tests/Geoblitz.Api.Tests/CachingTests.cs`.
 
-**Where**: `src/HighPerf.Api/Program.cs` (`AddOutputCache` policy registration,
-`.CacheOutput("Geo")` on each endpoint); `src/HighPerf.Api/GeoCacheKey.cs`;
-`src/HighPerf.Api/ComputeCounter.cs`.
+**Where**: `src/Geoblitz.Api/Program.cs` (`AddOutputCache` policy registration,
+`.CacheOutput("Geo")` on each endpoint); `src/Geoblitz.Api/GeoCacheKey.cs`;
+`src/Geoblitz.Api/ComputeCounter.cs`.
 
-**Measured**: `tests/HighPerf.Api.Tests/CachingTests.cs` — `IdenticalRequests_SecondIsServedFromCache`,
+**Measured**: `tests/Geoblitz.Api.Tests/CachingTests.cs` — `IdenticalRequests_SecondIsServedFromCache`,
 `NearbyCoordinates_SameQuantizedBucket_ShareCacheEntry`, `DifferentCount_IsACacheMiss`,
 `DifferentBucket_IsACacheMiss` all pass, verifying both the quantization and the
-`X-Compute-Count` replay behavior. `tests/HighPerf.Api.Tests/CacheValidationTests.cs` covers
+`X-Compute-Count` replay behavior. `tests/Geoblitz.Api.Tests/CacheValidationTests.cs` covers
 the validity dimension: for every invalid parameter shape it issues the *valid* request first
 (populating the cache) and then the invalid variant, asserting a 400; plus the reverse order
 (a 400 must not poison the valid variant) and that equivalent spellings still share one entry.
@@ -276,7 +276,7 @@ figure of technique 6.
 
 **What**: `WebApplication.CreateSlimBuilder` (trimmed-down default host, no unused
 features); `<ServerGarbageCollection>true</ServerGarbageCollection>` and
-`<TieredPGO>true</TieredPGO>` in `src/HighPerf.Api/HighPerf.Api.csproj`;
+`<TieredPGO>true</TieredPGO>` in `src/Geoblitz.Api/Geoblitz.Api.csproj`;
 `<InvariantGlobalization>true</InvariantGlobalization>` to skip ICU loading; and
 `builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false)` to drop the `Server`
 response header.
@@ -288,8 +288,8 @@ throughput for a request-heavy workload; TieredPGO lets the JIT specialize hot m
 header removes a small, useless per-response write and a minor information-disclosure
 surface.
 
-**Where**: `src/HighPerf.Api/Program.cs` (`CreateSlimBuilder`, `ConfigureKestrel`);
-`src/HighPerf.Api/HighPerf.Api.csproj` (`ServerGarbageCollection`, `InvariantGlobalization`,
+**Where**: `src/Geoblitz.Api/Program.cs` (`CreateSlimBuilder`, `ConfigureKestrel`);
+`src/Geoblitz.Api/Geoblitz.Api.csproj` (`ServerGarbageCollection`, `InvariantGlobalization`,
 `TieredPgo` properties).
 
 **Measured**: not isolated as a standalone benchmark (host-level settings affect the whole

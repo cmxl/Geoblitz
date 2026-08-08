@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <InternalsVisibleTo Include="Geoblitz.Geo.Tests" />
+    <InternalsVisibleTo Include="Geoblitz.Benchmarks" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\cities.tsv.gz" LogicalName="cities.tsv.gz" />
+  </ItemGroup>
+</Project>

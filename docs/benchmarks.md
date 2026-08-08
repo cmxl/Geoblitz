@@ -3,15 +3,15 @@
 [← Back to docs index](index.md)
 
 Two kinds of measurement exist in this repo: a BenchmarkDotNet micro-benchmark suite
-(`HighPerf.Geo` in isolation, no HTTP) and k6 load-test scripts (the full API over HTTP).
+(`Geoblitz.Geo` in isolation, no HTTP) and k6 load-test scripts (the full API over HTTP).
 
 ## Running the BenchmarkDotNet suite
 
 ```bash
-dotnet run -c Release --project benchmarks/HighPerf.Benchmarks -- --filter "*GeoBenchmarks*"
+dotnet run -c Release --project benchmarks/Geoblitz.Benchmarks -- --filter "*GeoBenchmarks*"
 ```
 
-The benchmarks live in `benchmarks/HighPerf.Benchmarks/GeoBenchmarks.cs`
+The benchmarks live in `benchmarks/Geoblitz.Benchmarks/GeoBenchmarks.cs`
 (`[MemoryDiagnoser]` class `GeoBenchmarks`), and load the real embedded dataset via
 `GeoDatabase.LoadDefault()` in `[GlobalSetup]`. The command above uses BenchmarkDotNet's
 **default job** (auto-tuned invocation count, heuristic warmup, auto-terminated measurement,
@@ -51,7 +51,7 @@ the same result set, and consecutive rows differ in exactly one implementation c
 ## Running the k6 load tests
 
 ```bash
-dotnet run -c Release --project src/HighPerf.Api   # terminal 1, starts on http://localhost:5235
+dotnet run -c Release --project src/Geoblitz.Api   # terminal 1, starts on http://localhost:5235
 k6 run loadtest/mixed.js                            # terminal 2
 ```
 
@@ -129,8 +129,8 @@ Full raw results, machine info, the attribution table and observations:
 
 ## API endpoint allocations
 
-BenchmarkDotNet measures `HighPerf.Geo` only. The endpoints' own allocation profile is measured
-by `tests/HighPerf.Api.Tests/AllocationTests.cs`, which runs on every `dotnet test`:
+BenchmarkDotNet measures `Geoblitz.Geo` only. The endpoints' own allocation profile is measured
+by `tests/Geoblitz.Api.Tests/AllocationTests.cs`, which runs on every `dotnet test`:
 
 | Measurement | Value | Covers |
 |---|---|---|

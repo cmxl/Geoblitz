@@ -1,4 +1,9 @@
-# HighPerformance Geo API — Documentation
+# Geoblitz Geo API — Documentation
+
+> **Note**: This project was renamed from **HighPerf** to **Geoblitz** on 2026-08-08.
+> The historical design specs and implementation plans linked below (under `work/`) predate
+> the rename and still use the old `HighPerf` name — they are left as-is since they are
+> historical records of what was actually decided and built at the time.
 
 ## Purpose
 
@@ -40,8 +45,8 @@ explained where they matter:
 ## Repository root
 
 - [`README.md`](../README.md) — project pitch and quickstart.
-- `src/HighPerf.Geo` — the geo index and math library.
-- `src/HighPerf.Api` — the minimal-API host.
+- `src/Geoblitz.Geo` — the geo index and math library.
+- `src/Geoblitz.Api` — the minimal-API host.
 - `tests/` — xUnit tests across both projects.
 - `benchmarks/` — BenchmarkDotNet suite and [`RESULTS.md`](../benchmarks/RESULTS.md).
 - `loadtest/` — k6 scripts.

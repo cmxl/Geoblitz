@@ -1,6 +1,6 @@
-# HighPerf Geo — Flight Deck
+# Geoblitz Geo — Flight Deck
 
-A single-view Angular console for the HighPerf Geo API: click-to-query nearest cities,
+A single-view Angular console for the Geoblitz Geo API: click-to-query nearest cities,
 alt-drag/slider radius search, and a two-click ruler, all rendered on a dark-themed OpenStreetMap
 view with a live HUD (engine time, HTTP time, cache HIT/MISS, allocation figures).
 

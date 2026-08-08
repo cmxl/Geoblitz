@@ -1,9 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <InternalsVisibleTo Include="HighPerf.Geo.Tests" />
-    <InternalsVisibleTo Include="HighPerf.Benchmarks" />
-  </ItemGroup>
-  <ItemGroup>
-    <EmbeddedResource Include="Resources\cities.tsv.gz" LogicalName="cities.tsv.gz" />
-  </ItemGroup>
-</Project>

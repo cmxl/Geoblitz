@@ -7,7 +7,7 @@ if (-not (Test-Path $zip)) {
 }
 Expand-Archive $zip -DestinationPath $tmp -Force
 $inFile = Join-Path $tmp 'cities1000.txt'
-$outDir = Join-Path $PSScriptRoot '..\src\HighPerf.Geo\Resources'
+$outDir = Join-Path $PSScriptRoot '..\src\Geoblitz.Geo\Resources'
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $outGz = Join-Path $outDir 'cities.tsv.gz'
 

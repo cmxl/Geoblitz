@@ -6,7 +6,7 @@
   },
   "newProjectRoot": "projects",
   "projects": {
-    "highperf-web": {
+    "geoblitz-web": {
       "projectType": "application",
       "schematics": {},
       "root": "",
@@ -56,10 +56,10 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "highperf-web:build:production"
+              "buildTarget": "geoblitz-web:build:production"
             },
             "development": {
-              "buildTarget": "highperf-web:build:development"
+              "buildTarget": "geoblitz-web:build:development"
             }
           },
           "defaultConfiguration": "development"

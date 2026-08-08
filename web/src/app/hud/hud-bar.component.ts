@@ -8,7 +8,7 @@ import { EngineTimePipe } from '../core/format.pipes';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="hud">
-      <span class="brand">HIGH<em>PERF</em>/GEO</span>
+      <span class="brand">GEO<em>BLITZ</em></span>
       @if (store.linkDown()) {
         <span class="stat down">LINK DOWN</span>
       } @else if (store.lastTiming(); as t) {

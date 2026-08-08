@@ -1,6 +1,6 @@
 # k6 Load Tests
 
-Performance load tests for the HighPerformance API using k6.
+Performance load tests for the Geoblitz API using k6.
 
 ## Running the Tests
 
@@ -14,7 +14,7 @@ Performance load tests for the HighPerformance API using k6.
 In one terminal:
 
 ```bash
-dotnet run -c Release --project src/HighPerf.Api
+dotnet run -c Release --project src/Geoblitz.Api
 ```
 
 The API will start on `http://localhost:5235` by default.

@@ -12,7 +12,7 @@
 ## Command
 
 ```
-dotnet run -c Release --project benchmarks/HighPerf.Benchmarks -- --filter "*GeoBenchmarks*"
+dotnet run -c Release --project benchmarks/Geoblitz.Benchmarks -- --filter "*GeoBenchmarks*"
 ```
 
 Run with BenchmarkDotNet's **default job** (no `--job short`): 1 launch, auto-tuned invocation
@@ -108,8 +108,8 @@ kernel is essentially perfectly vectorized.
 
 ## API hot path
 
-BenchmarkDotNet covers the `HighPerf.Geo` query path only. The allocation profile of the API
-endpoints themselves is measured by `HighPerf.Api.Tests/AllocationTests.cs`:
+BenchmarkDotNet covers the `Geoblitz.Geo` query path only. The allocation profile of the API
+endpoints themselves is measured by `Geoblitz.Api.Tests/AllocationTests.cs`:
 
 | Measurement | Value | What it covers |
 |---|---|---|

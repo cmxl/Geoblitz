@@ -3,7 +3,7 @@
 [← Back to docs index](index.md)
 
 Base URL for local development: `http://localhost:5235` (see
-`src/HighPerf.Api/Properties/launchSettings.json`; `dotnet run -c Release --project src/HighPerf.Api`).
+`src/Geoblitz.Api/Properties/launchSettings.json`; `dotnet run -c Release --project src/Geoblitz.Api`).
 
 All responses are `application/json; charset=utf-8` unless noted. All six endpoints below are
 `GET`-only; the five geo endpoints are output-cached (`/healthz` is not) — see
@@ -72,7 +72,7 @@ GET /cities/nearest?lat=52.52437&lon=13.41053&count=3
 > landmark coordinate) as separate entries, which are genuinely closer to the landmark
 > coordinate than the "Berlin" city record itself (~612 m away) — so nearest-city tests and
 > examples deliberately query Berlin's own record coordinate to keep "Berlin" first. See
-> `tests/HighPerf.Geo.Tests/FindNearestTests.cs` (`RealDataset_NearestToBerlin_IsBerlin`).
+> `tests/Geoblitz.Geo.Tests/FindNearestTests.cs` (`RealDataset_NearestToBerlin_IsBerlin`).
 
 ## `GET /cities/within`
 

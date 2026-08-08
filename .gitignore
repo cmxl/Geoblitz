@@ -42,7 +42,7 @@ bld/
 
 # Build artifact: tools/publish-web.ps1 mirrors the Angular production build here for
 # single-origin hosting. Never committed - always regenerated from web/.
-src/HighPerf.Api/wwwroot/
+src/Geoblitz.Api/wwwroot/
 
 # Visual Studio 2017 auto generated files
 Generated\ Files/

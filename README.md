@@ -1,4 +1,4 @@
-# HighPerformance Geo API
+# Geoblitz Geo API
 
 A .NET 10 minimal API that answers geospatial queries — nearest cities, cities within a
 radius, great-circle distance, and geohash encode/decode — over the full GeoNames
@@ -27,19 +27,19 @@ set three ways, so each factor isolates one decision (BenchmarkDotNet default jo
 At the HTTP layer, the `/cities/nearest` hot path (cache key, query parsing, validation, query,
 JSON write, flush) allocates a measured **256 B per request** — the three documented per-request
 strings (cache key, `X-Compute-Count`, `Server-Timing`) and header bookkeeping, with nothing
-scaling per city or per byte (`tests/HighPerf.Api.Tests/AllocationTests.cs`).
+scaling per city or per byte (`tests/Geoblitz.Api.Tests/AllocationTests.cs`).
 
 ## Quickstart
 
 Requires the .NET 10 SDK.
 
 ```bash
-dotnet run -c Release --project src/HighPerf.Api
+dotnet run -c Release --project src/Geoblitz.Api
 ```
 
 The API listens on `http://localhost:5235` (see
-`src/HighPerf.Api/Properties/launchSettings.json`). The city dataset is embedded in the
-build (`src/HighPerf.Geo/Resources/cities.tsv.gz`), so no separate data step is needed to
+`src/Geoblitz.Api/Properties/launchSettings.json`). The city dataset is embedded in the
+build (`src/Geoblitz.Geo/Resources/cities.tsv.gz`), so no separate data step is needed to
 run the API.
 
 Only if you want to regenerate the dataset from a fresh GeoNames export:
@@ -50,14 +50,14 @@ pwsh tools/prepare-dataset.ps1
 
 This downloads `cities1000.zip` from geonames.org, reduces each row to a 5-column TSV
 (`name, country, lat, lon, population`), and gzips it into
-`src/HighPerf.Geo/Resources/cities.tsv.gz`.
+`src/Geoblitz.Geo/Resources/cities.tsv.gz`.
 
 Optional: the "Flight Deck" web console (Angular).
 
 ```powershell
 # Recommended: single-origin showcase mode — one process serves both the API and the console
 pwsh tools/publish-web.ps1
-dotnet run -c Release --project src/HighPerf.Api
+dotnet run -c Release --project src/Geoblitz.Api
 # open http://localhost:5235
 ```
 
@@ -96,21 +96,21 @@ Full parameter reference, defaults, limits, and error shapes: [`docs/api.md`](do
 ## Development
 
 ```bash
-dotnet test                 # 160 tests: 79 HighPerf.Geo.Tests + 81 HighPerf.Api.Tests
-dotnet run -c Release --project benchmarks/HighPerf.Benchmarks -- --filter "*GeoBenchmarks*"
+dotnet test                 # 160 tests: 79 Geoblitz.Geo.Tests + 81 Geoblitz.Api.Tests
+dotnet run -c Release --project benchmarks/Geoblitz.Benchmarks -- --filter "*GeoBenchmarks*"
 k6 run loadtest/mixed.js    # requires the API running and k6 installed
 ```
 
 ## Project layout
 
-- `src/HighPerf.Geo` — the geo index and math library (no ASP.NET Core dependency).
-- `src/HighPerf.Api` — the minimal-API host: 6 endpoints, output caching, JSON writing.
+- `src/Geoblitz.Geo` — the geo index and math library (no ASP.NET Core dependency).
+- `src/Geoblitz.Api` — the minimal-API host: 6 endpoints, output caching, JSON writing.
 - `tests/` — xUnit test suites for both projects (160 tests total, including the endpoint
   allocation tripwire and the cache-validation regression suite).
-- `benchmarks/HighPerf.Benchmarks` — BenchmarkDotNet suite; results in `benchmarks/RESULTS.md`.
+- `benchmarks/Geoblitz.Benchmarks` — BenchmarkDotNet suite; results in `benchmarks/RESULTS.md`.
 - `loadtest/` — k6 scripts for per-endpoint and mixed-traffic load testing.
 - `tools/prepare-dataset.ps1` — regenerates the embedded dataset from GeoNames.
 - `tools/publish-web.ps1` — builds the Angular console and mirrors it into
-  `src/HighPerf.Api/wwwroot` for single-origin hosting (see [`docs/frontend.md`](docs/frontend.md)).
+  `src/Geoblitz.Api/wwwroot` for single-origin hosting (see [`docs/frontend.md`](docs/frontend.md)).
 - `web/` — the Angular "Flight Deck" map console for the API (see [`docs/frontend.md`](docs/frontend.md)).
 - `docs/` — architecture, performance techniques, API reference, benchmarks, frontend ([index](docs/index.md)).

@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/Geoblitz.Benchmarks/Geoblitz.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Geoblitz.Api/Geoblitz.Api.csproj" />
+    <Project Path="src/Geoblitz.Geo/Geoblitz.Geo.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Geoblitz.Api.Tests/Geoblitz.Api.Tests.csproj" />
+    <Project Path="tests/Geoblitz.Geo.Tests/Geoblitz.Geo.Tests.csproj" />
+  </Folder>
+</Solution>
