@@ -44,4 +44,14 @@ public partial class ServerTimingTests(ApiFixture fixture)
         var res = await client.GetAsync("/healthz", TestContext.Current.CancellationToken);
         Assert.False(res.Headers.Contains("Server-Timing"));
     }
+
+    [Fact]
+    public async Task ValidationError_HasNoServerTiming()
+    {
+        using var client = fixture.CreateClient();
+        // lat out of range -> 400 before the compute call, so no engine timing should be emitted.
+        var res = await client.GetAsync("/cities/nearest?lat=999&lon=1", TestContext.Current.CancellationToken);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, res.StatusCode);
+        Assert.False(res.Headers.Contains("Server-Timing"));
+    }
 }

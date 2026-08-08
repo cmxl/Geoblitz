@@ -39,7 +39,6 @@ export class GeoApiService {
       .join('&');
     const started = performance.now();
     const res = await fetch(`${this.baseUrl}${path}?${query}`);
-    const httpMillis = performance.now() - started;
 
     if (!res.ok) {
       if (res.headers.get('content-type')?.includes('application/problem+json')) {
@@ -48,18 +47,22 @@ export class GeoApiService {
       throw new Error(`geo-api: HTTP ${res.status}`);
     }
 
-    return {
-      data: (await res.json()) as T,
-      engineMicros: parseEngineMicros(res.headers.get('Server-Timing')),
-      computeCount: parseCount(res.headers.get('X-Compute-Count')),
-      httpMillis,
-    };
+    const engineMicros = parseEngineMicros(res.headers.get('Server-Timing'));
+    const computeCount = parseCount(res.headers.get('X-Compute-Count'));
+    const data = (await res.json()) as T;
+    // Measured after the body is fully consumed so httpMillis reflects the full round trip
+    // (network + Kestrel + serialization + download), not just the time to response headers.
+    const httpMillis = performance.now() - started;
+
+    return { data, engineMicros, computeCount, httpMillis };
   }
 }
 
 function parseEngineMicros(header: string | null): number | null {
   const match = header?.match(/engine;dur=([0-9.]+)/);
-  return match ? Number(match[1]) * 1000 : null;
+  if (!match) return null;
+  const micros = Number(match[1]) * 1000;
+  return Number.isFinite(micros) ? micros : null;
 }
 
 function parseCount(header: string | null): number | null {

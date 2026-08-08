@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 
 namespace HighPerf.Api.Tests;
@@ -37,6 +38,23 @@ public class CorsTests(ApiFixture fixture)
         using var req = new HttpRequestMessage(HttpMethod.Get, "/healthz");
         req.Headers.Add("Origin", "https://evil.example");
         var res = await client.SendAsync(req, TestContext.Current.CancellationToken);
+        Assert.False(res.Headers.Contains("Access-Control-Allow-Origin"));
+    }
+
+    // Uses a locally-created WebApplicationFactory (not the shared "api" collection fixture,
+    // which runs in Development) so it can pin the Production-only environment without
+    // affecting the other tests in the collection. Spinning up a second factory reloads the
+    // geo database and costs roughly 1-2 extra seconds in this test.
+    [Fact]
+    public async Task ProductionEnvironment_GetsNoCorsHeadersForDevOrigin()
+    {
+        await using var prodFactory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(b => b.UseSetting("environment", "Production"));
+        using var client = prodFactory.CreateClient();
+        using var req = new HttpRequestMessage(HttpMethod.Get, "/healthz");
+        req.Headers.Add("Origin", "http://localhost:4200");
+        var res = await client.SendAsync(req, TestContext.Current.CancellationToken);
+        res.EnsureSuccessStatusCode();
         Assert.False(res.Headers.Contains("Access-Control-Allow-Origin"));
     }
 }
