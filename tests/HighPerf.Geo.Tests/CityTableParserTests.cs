@@ -95,12 +95,9 @@ public class CityTableParserTests
         Assert.Equal(1471508, p.Population[1]);
     }
 
-    /// <summary>KNOWN BUG (found by this test, not fixed here per test-guardian policy): the parser
-    /// does not skip a leading UTF-8 BOM (EF BB BF). The BOM bytes end up as part of the first
-    /// line's name field, so the first city's name comes back as "﻿Berlin" instead of "Berlin".
-    /// This test intentionally FAILS to pin/document the bug; do not "fix" it by weakening the
-    /// assertion — fix <see cref="CityTableParser.Parse"/> to strip an optional leading BOM instead.
-    /// </summary>
+    /// <summary>Regression test: <see cref="CityTableParser.Parse"/> must strip an optional
+    /// leading UTF-8 BOM (EF BB BF); without that, the BOM bytes become part of the first
+    /// line's name field and the first city decodes as "﻿Berlin" instead of "Berlin".</summary>
     [Fact]
     public void Utf8Bom_AtStartOfInput_DoesNotCorruptFirstCityName()
     {
