@@ -170,6 +170,160 @@ describe('DragLifecycle', () => {
     expect(distanceKm).toHaveBeenCalledWith(anchor, { lat: 3, lng: 4 });
   });
 
+  describe('noteMouseUp (350ms release->click expiry window)', () => {
+    it('REGRESSION: a cancel followed by a long-delayed mouseup keeps suppression armed — the expiry timer must start at the mouseup, not at cancel', () => {
+      // Escape/mouseout can cancel the drag while the mouse button is still held down. The
+      // browser's synthetic click only fires once the button actually comes up, which may be
+      // long after the cancel. If the expiry timer started at cancel time, it would have
+      // expired suppression before the click that it exists to catch.
+      vi.useFakeTimers();
+      try {
+        const drag = new DragLifecycle(planarKm);
+        drag.begin({ lat: 48, lng: 11 });
+        drag.cancel(); // e.g. Escape while the button is still held down
+        vi.advanceTimersByTime(500); // way past 350ms, button still not released
+        drag.noteMouseUp(); // the button is released only now
+        expect(drag.consumeClickSuppression()).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('expires suppression 350ms after noteMouseUp, bounding the window from the real release', () => {
+      vi.useFakeTimers();
+      try {
+        const drag = new DragLifecycle(planarKm);
+        drag.begin({ lat: 48, lng: 11 });
+        drag.cancel();
+        drag.noteMouseUp();
+        vi.advanceTimersByTime(350);
+        expect(drag.consumeClickSuppression()).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('CHANGED (was: cancel never schedules any expiry — superseded by the MAJOR fallback fix below): cancel() does not clear suppression within the tight 350ms window — only the long last-resort fallback, or a later real mouseup, bounds it', () => {
+      // Originally this asserted suppression stayed armed even after 10s with no mouseup ever
+      // arriving — i.e. cancel() alone never self-clears. Code review flagged that as a MAJOR
+      // bug: if the real mouseup never reaches the window listener at all (release outside the
+      // browser window / OS focus loss), suppression stayed armed forever and ate the next
+      // legitimate click. `cancel()` now arms a long last-resort fallback timer, so this test is
+      // narrowed to prove only that the *tight* 350ms window doesn't govern a bare cancel() —
+      // see the "cancel() with no mouseup ever arriving" test below for the fallback itself.
+      vi.useFakeTimers();
+      try {
+        const drag = new DragLifecycle(planarKm);
+        drag.begin({ lat: 48, lng: 11 });
+        drag.cancel();
+        vi.advanceTimersByTime(1000); // past the tight 350ms window, still well under the fallback
+        expect(drag.consumeClickSuppression()).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('releaseInside + noteMouseUp still expires suppression 350ms after the release (unchanged real-release timing)', () => {
+      vi.useFakeTimers();
+      try {
+        const drag = new DragLifecycle(planarKm, 0.05);
+        drag.begin({ lat: 0, lng: 0 });
+        drag.releaseInside({ lat: 3, lng: 4 });
+        drag.noteMouseUp();
+        vi.advanceTimersByTime(350);
+        expect(drag.consumeClickSuppression()).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('dispose() clears a pending expiry timer so it cannot fire later and clobber a subsequent drag', () => {
+      vi.useFakeTimers();
+      try {
+        const drag = new DragLifecycle(planarKm);
+        drag.begin({ lat: 48, lng: 11 });
+        drag.cancel();
+        drag.noteMouseUp();
+        drag.dispose();
+        // If the timer were still pending, advancing past 350ms would call
+        // expireClickSuppression() — arm a fresh cycle first so that would be observable.
+        drag.begin({ lat: 0, lng: 0 });
+        drag.cancel();
+        vi.advanceTimersByTime(350);
+        expect(drag.consumeClickSuppression()).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe('cross-gesture timer safety (code review follow-up)', () => {
+    it("REGRESSION: a timer armed by an earlier finished gesture cannot fire mid-way through a new gesture and clear the new gesture's suppression", () => {
+      // Repro from review: drag A ends out-of-container (noteMouseUp arms a 350ms timer T).
+      // Drag B begins and is Escape-cancelled before T elapses and before B's own mouseup. If
+      // nothing clears T when B starts/cancels, T fires mid-way through B's gesture and wipes
+      // out the suppression B just armed for itself, letting B's trailing click through.
+      vi.useFakeTimers();
+      try {
+        const drag = new DragLifecycle(planarKm);
+        // Gesture A: begins, ends out-of-container — its mouseup already happened, so its
+        // suppression is bound by the tight 350ms window starting now (t=0).
+        drag.begin({ lat: 0, lng: 0 });
+        drag.cancel();
+        drag.noteMouseUp(); // T scheduled to fire at t=350
+        vi.advanceTimersByTime(50); // t=50
+
+        // Gesture B: begins before T elapses...
+        drag.begin({ lat: 1, lng: 1 });
+        vi.advanceTimersByTime(50); // t=100
+
+        // ...and is cancelled (e.g. Escape) before its own mouseup and before T elapses.
+        drag.cancel();
+
+        // Advance past t=350, when T (armed by A, not B) would have fired.
+        vi.advanceTimersByTime(250); // t=350
+
+        // B's own suppression must still be armed — A's stale timer must not have cleared it.
+        expect(drag.consumeClickSuppression()).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('cancel() arms a long last-resort fallback so suppression cannot stay armed forever when the real mouseup never arrives at all', () => {
+      // e.g. Escape while dragging, then the button is released outside the browser window
+      // entirely (OS focus loss) — the window-level mouseup listener never sees it, so
+      // noteMouseUp() is never called for this gesture. Without a ceiling, suppression would
+      // stay armed forever and eat the next legitimate click.
+      vi.useFakeTimers();
+      try {
+        const drag = new DragLifecycle(planarKm);
+        drag.begin({ lat: 48, lng: 11 });
+        drag.cancel();
+        vi.advanceTimersByTime(10_000); // well past any reasonable release->click gap
+        expect(drag.consumeClickSuppression()).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('a real noteMouseUp before the fallback fires supersedes it with the tight 350ms window', () => {
+      vi.useFakeTimers();
+      try {
+        const drag = new DragLifecycle(planarKm);
+        drag.begin({ lat: 48, lng: 11 });
+        drag.cancel(); // arms the long fallback (several seconds)
+        vi.advanceTimersByTime(500); // still well under the fallback
+        drag.noteMouseUp(); // the real mouseup finally arrives — supersedes the fallback
+        vi.advanceTimersByTime(350); // if the multi-second fallback were still governing, this
+        // would still be armed; only the fresh, superseding 350ms window explains a clear here.
+        expect(drag.consumeClickSuppression()).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it('a full begin -> move -> releaseInside -> begin cycle behaves independently each time', () => {
     const drag = new DragLifecycle(planarKm, 0.05);
     drag.begin({ lat: 0, lng: 0 });

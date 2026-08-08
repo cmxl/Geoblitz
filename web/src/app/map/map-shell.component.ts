@@ -21,9 +21,6 @@ import {
 } from './layers';
 import { DragLifecycle, Point } from './drag-lifecycle';
 
-/** How long to wait for the post-mouseup synthetic click before giving up on suppressing it. */
-const CLICK_SUPPRESSION_TIMEOUT_MS = 350;
-
 @Component({
   selector: 'app-map-shell',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -63,7 +60,6 @@ export class MapShellComponent {
     (a, b) => L.latLng(a.lat, a.lng).distanceTo(L.latLng(b.lat, b.lng)) / 1000,
   );
   private windowMouseUpHandler: ((e: MouseEvent) => void) | null = null;
-  private suppressClickTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     afterNextRender(() => this.initMap());
@@ -148,7 +144,7 @@ export class MapShellComponent {
     this.destroyRef.onDestroy(() => {
       window.removeEventListener('keydown', onKey);
       this.detachDragEndListener();
-      if (this.suppressClickTimer !== null) clearTimeout(this.suppressClickTimer);
+      this.dragLifecycle.dispose();
       map.remove();
     });
 
@@ -164,26 +160,35 @@ export class MapShellComponent {
   private attachDragEndListener(map: L.Map): void {
     this.detachDragEndListener(); // idempotent: never register two window listeners at once
     const handler = (e: MouseEvent) => {
-      if (!this.dragLifecycle.active) {
-        this.detachDragEndListener();
-        return;
-      }
       const rect = map.getContainer().getBoundingClientRect();
       const insideContainer =
         e.clientX >= rect.left &&
         e.clientX <= rect.right &&
         e.clientY >= rect.top &&
         e.clientY <= rect.bottom;
-      if (insideContainer) {
-        const latlng = map.mouseEventToLatLng(e);
-        const result = this.dragLifecycle.releaseInside({ lat: latlng.lat, lng: latlng.lng });
-        if (result)
-          void this.store.queryWithin(result.anchor.lat, result.anchor.lng, result.radiusKm);
-        this.scheduleSuppressionExpiry();
-        this.endDragVisuals(map);
-      } else {
-        this.cancelDrag(map);
+      // `active` can already be false here: an earlier Escape/mouseout may have cancelled the
+      // drag while the button was still held down (see `cancelDrag`), in which case this mouseup
+      // is just the delayed button-up and neither branch below applies.
+      if (this.dragLifecycle.active) {
+        if (insideContainer) {
+          const latlng = map.mouseEventToLatLng(e);
+          const result = this.dragLifecycle.releaseInside({ lat: latlng.lat, lng: latlng.lng });
+          if (result)
+            void this.store.queryWithin(result.anchor.lat, result.anchor.lng, result.radiusKm);
+        } else {
+          // Released outside the container: Leaflet's map never sees this event at all, so
+          // nothing else aborts the drag for us. This cancel happens exactly at the real
+          // mouseup (this handler), so — unlike Escape/mouseout — the expiry timer started
+          // below is correctly bounding the release→click window from the start.
+          this.dragLifecycle.cancel();
+        }
       }
+      // Reached on every real mouseup that ends a drag, whichever branch (if any) ran above:
+      // a normal release, an out-of-window cancel, or the delayed button-up following an
+      // earlier Escape/mouseout cancel. This is the one place the browser's synthetic click
+      // is actually bounded from, so it's the single point that (re)starts the expiry timer.
+      this.dragLifecycle.noteMouseUp();
+      this.endDragVisuals(map);
     };
     this.windowMouseUpHandler = handler;
     window.addEventListener('mouseup', handler);
@@ -197,31 +202,31 @@ export class MapShellComponent {
   }
 
   /**
-   * Aborts the in-progress drag: release outside the container, pointer leaving mid-drag
-   * (mouseout), or Escape. Every one of these paths still risks a stray native `click` firing
-   * afterwards (see `DragLifecycle.cancel` doc comment), so it arms suppression and schedules
-   * its expiry exactly like a real release does, then tears down the drag visuals/listeners.
+   * Aborts the in-progress drag from a pre-mouseup path: pointer leaving mid-drag (mouseout) or
+   * an explicit Escape. The mouse button may still be held down at this point — Leaflet's own
+   * drag-suppression never engaged, so a native `click` will still fire wherever it's eventually
+   * released (see `DragLifecycle.cancel` doc comment). Suppression is armed now, but its expiry
+   * timer deliberately is NOT started here and the window-level mouseup listener is deliberately
+   * left attached: `attachDragEndListener`'s handler calls `noteMouseUp()` once the button is
+   * actually released, which is what the timer must be bounded from. Only the visual/interaction
+   * side effects (preview circle, map panning) are torn down immediately.
    */
   private cancelDrag(map: L.Map): void {
     this.dragLifecycle.cancel();
-    this.scheduleSuppressionExpiry();
-    this.endDragVisuals(map);
+    this.clearDragVisuals(map);
   }
 
-  /** Clears the preview circle and re-enables map panning; used by every drag-ending path. */
-  private endDragVisuals(map: L.Map): void {
+  /** Removes the preview circle and re-enables map panning; safe to call more than once. */
+  private clearDragVisuals(map: L.Map): void {
     this.dragPreview?.remove();
     this.dragPreview = null;
     map.dragging.enable();
-    this.detachDragEndListener();
   }
 
-  private scheduleSuppressionExpiry(): void {
-    if (this.suppressClickTimer !== null) clearTimeout(this.suppressClickTimer);
-    this.suppressClickTimer = setTimeout(() => {
-      this.dragLifecycle.expireClickSuppression();
-      this.suppressClickTimer = null;
-    }, CLICK_SUPPRESSION_TIMEOUT_MS);
+  /** Full teardown once the drag has actually ended (its mouseup has been observed). */
+  private endDragVisuals(map: L.Map): void {
+    this.clearDragVisuals(map);
+    this.detachDragEndListener();
   }
 
   /**
