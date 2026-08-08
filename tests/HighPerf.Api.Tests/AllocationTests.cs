@@ -115,9 +115,9 @@ public class AllocationTests(ApiFixture fixture, ITestOutputHelper output)
     {
         GC.KeepAlive(GeoCacheKey.Compute(ctx)); // documented allocation: the output-cache key string
         var qs = (ctx.Request.QueryString.Value ?? "").AsSpan();
-        if (!QueryParams.TryGetDouble(qs, "lat", out var lat) || lat is < -90 or > 90)
+        if (!QueryParams.TryGetDouble(qs, "lat", out var lat) || lat is not (>= -90 and <= 90))
             throw new InvalidOperationException("lat");
-        if (!QueryParams.TryGetDouble(qs, "lon", out var lon) || lon is < -180 or > 180)
+        if (!QueryParams.TryGetDouble(qs, "lon", out var lon) || lon is not (>= -180 and <= 180))
             throw new InvalidOperationException("lon");
         var count = 5;
         if (QueryParams.TryGetRaw(qs, "count", out _) &&

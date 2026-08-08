@@ -77,7 +77,9 @@ GET /cities/nearest?lat=52.52437&lon=13.41053&count=3
 ## `GET /cities/within`
 
 All cities within `radiusKm` of a point with population at least `minPopulation`, sorted
-ascending by distance.
+ascending by distance. Results are capped at the 1000 closest matches; since the list is sorted
+ascending by distance, what gets dropped past the cap is the farthest cities, not arbitrary ones.
+A response with `count == 1000` signals that the cap was hit and more matches may exist beyond it.
 
 | Parameter | Type | Required | Default | Range |
 |---|---|---|---|---|

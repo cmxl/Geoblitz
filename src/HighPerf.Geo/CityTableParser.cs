@@ -17,8 +17,12 @@ public static class CityTableParser
         return Parse(ms.GetBuffer().AsSpan(0, (int)ms.Length));
     }
 
+    private static ReadOnlySpan<byte> Utf8Bom => [0xEF, 0xBB, 0xBF];
+
     public static ParsedCities Parse(ReadOnlySpan<byte> tsv)
     {
+        if (tsv.StartsWith(Utf8Bom)) tsv = tsv[Utf8Bom.Length..];
+
         var maxLines = tsv.Count(Lf) + 1;
         var lat = new float[maxLines];
         var lon = new float[maxLines];
