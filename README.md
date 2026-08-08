@@ -1,11 +1,21 @@
-# Geoblitz Geo API
+# Geoblitz
 
-A .NET 10 minimal API that answers geospatial queries — nearest cities, cities within a
-radius, great-circle distance, and geohash encode/decode — over the full GeoNames
+Geospatial queries at microsecond speed — and a console that shows you every microsecond.
+
+![The Flight Deck console: an 11 km radius query around Munich returning ten cities, with the
+HUD reporting 16.0 µs of engine time and zero allocations](docs/images/flight-deck-munich.png)
+
+Geoblitz is a .NET 10 minimal API that answers geospatial queries — nearest cities, cities
+within a radius, great-circle distance, and geohash encode/decode — over the full GeoNames
 `cities1000` dataset (170,584 cities), entirely from an in-memory, struct-of-arrays index.
 It exists as a learning/reference showcase for allocation-free, SIMD-accelerated request
 handling in ASP.NET Core: every query-path allocation, trig call, and JSON write was a
 deliberate choice, measured with BenchmarkDotNet and exercised under load with k6.
+
+The screenshot above is the **Flight Deck** web console that ships with it (Angular, real
+OpenStreetMap tiles): click the map to query, and the HUD strip reports the engine's compute
+time, the HTTP round trip, and cache state for every request — see
+[`docs/frontend.md`](docs/frontend.md).
 
 See [`docs/`](docs/index.md) for the full write-up: architecture, the performance
 techniques catalog, the API reference, and benchmark results.
