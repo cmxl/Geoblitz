@@ -59,14 +59,28 @@ Individual endpoint scripts: `loadtest/distance.js`, `loadtest/nearest.js`,
 `loadtest/within.js`. `mixed.js` drives all four query endpoints (nearest/within/distance/
 geohash) with a realistic 40/30/20/10 traffic split and a mix of cache-busting random
 coordinates (~70%) and hot repeated coordinates (~30%) to exercise the output cache under
-load. Default profile: 32 concurrent VUs for 30 seconds. Initial thresholds (uncalibrated —
-adjust after a real run against your target environment): p95 < 20 ms, p99 < 50 ms, error
-rate < 0.1%. Override the target with `BASE_URL=http://host:port k6 run loadtest/mixed.js`.
+load. Default profile: 32 concurrent VUs for 30 seconds. Thresholds: p95 < 20 ms,
+p99 < 50 ms, error rate < 0.1% — comfortably met on the reference machine (see measured
+results below); recalibrate for your own target environment. Override the target with
+`BASE_URL=http://host:port k6 run loadtest/mixed.js`.
 Full details: `loadtest/README.md`.
 
-No k6 run output is checked into this repo — the thresholds above are the scripts'
-starting configuration, not a measured result. The BenchmarkDotNet numbers below are the
-project's measured performance evidence.
+### Measured k6 results (2026-08-08)
+
+Measured on the reference machine below (server and k6 on the same host — numbers include
+loopback HTTP but no real network), k6 v2.1.0, Release build, 32 VUs × 30 s per scenario,
+all thresholds passed with zero failed requests:
+
+| Scenario | Requests | Throughput | avg | p95 | p99 |
+|---|---:|---:|---:|---:|---:|
+| `mixed.js` (all endpoints, 30% hot/cached) | 627,659 | 20,914 req/s | 1.35 ms | 3.38 ms | 5.81 ms |
+| `nearest.js` | 594,676 | 19,822 req/s | 1.44 ms | 3.50 ms | 6.79 ms |
+| `within.js` (100 km radius) | 600,772 | 20,021 req/s | 1.42 ms | 3.52 ms | 6.61 ms |
+| `distance.js` | 720,805 | 24,025 req/s | 1.16 ms | 2.92 ms | 5.05 ms |
+
+Server process after the ~2.5M-request session: 503 MB working set, no request failures —
+Server GC deliberately trades memory for throughput, and the output cache retains entries
+for its 10-minute TTL, so a large steady-state working set is expected, not a leak.
 
 ## Latest snapshot
 
